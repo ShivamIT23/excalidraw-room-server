@@ -273,27 +273,26 @@
       <!-- ======================================================== -->
       <!-- DRAWING TOOLS - Tool selector, color picker, size slider -->
       <!-- ======================================================== -->
-      <div class="row" style="margin-top:8px; overflow: hidden;">
+      <div class="row" style="margin-top:8px; display:flex; gap:12px; align-items:center;">
         <!-- Tool selection dropdown -->
         <label style="flex:1">
           Tool
           <select id="tool">
-            <option value="pen">Pen</option> <!-- Drawing tool -->
-            <option value="eraser">Eraser</option> <!-- Erasing tool -->
+            <option value="pen">Pen</option>
+            <option value="eraser">Eraser</option>
           </select>
         </label>
 
-        <!-- Color picker (only affects pen tool) -->
-        <label>
+        <label style="flex:0 0 auto">
           Color<br />
           <input id="color" type="color" value="#000000" />
         </label>
 
-        <!-- Size slider for brush/eraser -->
-        <label style="width:110px">
+        <label style="flex:0 0 110px">
           Size<br />
-          <input id="size" type="range" min="1" max="40" value="3" />
+          <input id="size" type="range" min="1" max="40" value="3" style="width:100%" />
         </label>
+
       </div>
 
       <!-- ======================================================== -->
