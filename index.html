@@ -12,225 +12,225 @@
 <html lang="en">
 
 <head>
-    <!-- Character encoding for proper text display -->
-    <meta charset="utf-8" />
+  <!-- Character encoding for proper text display -->
+  <meta charset="utf-8" />
 
-    <!-- Responsive viewport settings for mobile devices -->
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- Responsive viewport settings for mobile devices -->
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
 
-    <!-- Page title shown in browser tab -->
-    <title>Pure HTML Whiteboard (Canvas)</title>
+  <!-- Page title shown in browser tab -->
+  <title>Pure HTML Whiteboard (Canvas)</title>
 
-    <!-- ================================================================ -->
-    <!-- INLINE CSS STYLES -->
-    <!-- ================================================================ -->
-    <style>
-        /* ============================================================ */
-        /* CSS VARIABLES - Global design tokens */
-        /* ============================================================ */
-        :root {
-            --panel-w: 320px;
-            /* Width of the control panel */
-            /* Modern font stack for clean typography */
-            font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
-        }
+  <!-- ================================================================ -->
+  <!-- INLINE CSS STYLES -->
+  <!-- ================================================================ -->
+  <style>
+    /* ============================================================ */
+    /* CSS VARIABLES - Global design tokens */
+    /* ============================================================ */
+    :root {
+      --panel-w: 320px;
+      /* Width of the control panel */
+      /* Modern font stack for clean typography */
+      font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    }
 
-        /* ============================================================ */
-        /* BODY - Main layout container */
-        /* ============================================================ */
-        body {
-            margin: 0;
-            /* Remove default margins */
-            display: flex;
-            /* Use flexbox for layout */
-            height: 100vh;
-            /* Full viewport height */
-            gap: 12px;
-            /* Space between panel and canvas */
-            padding: 12px;
-            /* Outer padding */
-            box-sizing: border-box;
-            /* Include padding in dimensions */
-            background: #f6f7fb;
-            /* Light gray background */
-        }
+    /* ============================================================ */
+    /* BODY - Main layout container */
+    /* ============================================================ */
+    body {
+      margin: 0;
+      /* Remove default margins */
+      display: flex;
+      /* Use flexbox for layout */
+      height: 100vh;
+      /* Full viewport height */
+      gap: 12px;
+      /* Space between panel and canvas */
+      padding: 12px;
+      /* Outer padding */
+      box-sizing: border-box;
+      /* Include padding in dimensions */
+      background: #f6f7fb;
+      /* Light gray background */
+    }
 
-        /* ============================================================ */
-        /* CONTROL PANEL - Left sidebar with controls */
-        /* ============================================================ */
-        .panel {
-            width: var(--panel-w);
-            /* Fixed width from CSS variable */
-            background: #fff;
-            /* White background */
-            border-radius: 10px;
-            /* Rounded corners */
-            box-shadow: 0 6px 18px rgba(16, 24, 40, 0.06);
-            /* Subtle shadow */
-            padding: 12px;
-            /* Internal padding */
-            display: flex;
-            /* Flexbox for vertical layout */
-            flex-direction: column;
-            /* Stack items vertically */
-            gap: 10px;
-            /* Space between items */
-        }
+    /* ============================================================ */
+    /* CONTROL PANEL - Left sidebar with controls */
+    /* ============================================================ */
+    .panel {
+      width: var(--panel-w);
+      /* Fixed width from CSS variable */
+      background: #fff;
+      /* White background */
+      border-radius: 10px;
+      /* Rounded corners */
+      box-shadow: 0 6px 18px rgba(16, 24, 40, 0.06);
+      /* Subtle shadow */
+      padding: 12px;
+      /* Internal padding */
+      display: flex;
+      /* Flexbox for vertical layout */
+      flex-direction: column;
+      /* Stack items vertically */
+      gap: 10px;
+      /* Space between items */
+    }
 
-        /* ============================================================ */
-        /* CANVAS WRAPPER - Container for the drawing canvas */
-        /* ============================================================ */
-        .canvas-wrap {
-            flex: 1;
-            /* Take remaining space */
-            border-radius: 10px;
-            /* Rounded corners */
-            overflow: hidden;
-            /* Hide overflow */
-            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04) inset;
-            /* Inner shadow */
-            background: white;
-            /* White background */
-            display: flex;
-            /* Flexbox layout */
-            flex-direction: column;
-            /* Stack vertically */
-        }
+    /* ============================================================ */
+    /* CANVAS WRAPPER - Container for the drawing canvas */
+    /* ============================================================ */
+    .canvas-wrap {
+      flex: 1;
+      /* Take remaining space */
+      border-radius: 10px;
+      /* Rounded corners */
+      overflow: hidden;
+      /* Hide overflow */
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04) inset;
+      /* Inner shadow */
+      background: white;
+      /* White background */
+      display: flex;
+      /* Flexbox layout */
+      flex-direction: column;
+      /* Stack vertically */
+    }
 
-        /* ============================================================ */
-        /* CANVAS - The actual drawing surface */
-        /* ============================================================ */
-        canvas {
-            display: block;
-            /* Remove inline spacing */
-            width: 100%;
-            /* Full width of container */
-            height: 100%;
-            /* Full height of container */
-            touch-action: none;
-            /* Disable default touch behaviors */
-        }
+    /* ============================================================ */
+    /* CANVAS - The actual drawing surface */
+    /* ============================================================ */
+    canvas {
+      display: block;
+      /* Remove inline spacing */
+      width: 100%;
+      /* Full width of container */
+      height: 100%;
+      /* Full height of container */
+      touch-action: none;
+      /* Disable default touch behaviors */
+    }
 
-        /* ============================================================ */
-        /* FORM LABELS - Text labels for inputs */
-        /* ============================================================ */
-        label {
-            display: block;
-            /* Block-level element */
-            font-size: 12px;
-            /* Small text */
-            color: #333;
-            /* Dark gray text */
-            margin-bottom: 6px;
-            /* Space below label */
-        }
+    /* ============================================================ */
+    /* FORM LABELS - Text labels for inputs */
+    /* ============================================================ */
+    label {
+      display: block;
+      /* Block-level element */
+      font-size: 12px;
+      /* Small text */
+      color: #333;
+      /* Dark gray text */
+      margin-bottom: 6px;
+      /* Space below label */
+    }
 
-        /* ============================================================ */
-        /* COLOR PICKER - Styled color input */
-        /* ============================================================ */
-        input[type="color"] {
-            padding: 0;
-            /* No padding */
-            width: 36px;
-            /* Fixed width */
-            height: 28px;
-            /* Fixed height */
-            border: 0;
-            /* No border */
-            background: transparent;
-            /* Transparent background */
-            vertical-align: middle;
-            /* Align with text */
-        }
+    /* ============================================================ */
+    /* COLOR PICKER - Styled color input */
+    /* ============================================================ */
+    input[type="color"] {
+      padding: 0;
+      /* No padding */
+      width: 36px;
+      /* Fixed width */
+      height: 28px;
+      /* Fixed height */
+      border: 0;
+      /* No border */
+      background: transparent;
+      /* Transparent background */
+      vertical-align: middle;
+      /* Align with text */
+    }
 
-        /* ============================================================ */
-        /* ROW LAYOUT - Horizontal flex container */
-        /* ============================================================ */
-        .row {
-            display: flex;
-            /* Flexbox layout */
-            gap: 8px;
-            /* Space between items */
-            align-items: center;
-            /* Vertically center items */
-            flex-wrap: wrap;
-            /* Wrap to next line if needed */
-        }
+    /* ============================================================ */
+    /* ROW LAYOUT - Horizontal flex container */
+    /* ============================================================ */
+    .row {
+      display: flex;
+      /* Flexbox layout */
+      gap: 8px;
+      /* Space between items */
+      align-items: center;
+      /* Vertically center items */
+      flex-wrap: wrap;
+      /* Wrap to next line if needed */
+    }
 
-        /* ============================================================ */
-        /* BUTTONS - Default button styling */
-        /* ============================================================ */
-        button {
-            padding: 8px 10px;
-            /* Internal padding */
-            border-radius: 8px;
-            /* Rounded corners */
-            border: 1px solid #e6e9ef;
-            /* Light border */
-            background: #fff;
-            /* White background */
-            cursor: pointer;
-            /* Pointer cursor on hover */
-        }
+    /* ============================================================ */
+    /* BUTTONS - Default button styling */
+    /* ============================================================ */
+    button {
+      padding: 8px 10px;
+      /* Internal padding */
+      border-radius: 8px;
+      /* Rounded corners */
+      border: 1px solid #e6e9ef;
+      /* Light border */
+      background: #fff;
+      /* White background */
+      cursor: pointer;
+      /* Pointer cursor on hover */
+    }
 
-        /* Primary button variant (e.g., Connect button) */
-        button.primary {
-            background: #2563eb;
-            /* Blue background */
-            color: white;
-            /* White text */
-            border-color: transparent;
-            /* No visible border */
-        }
+    /* Primary button variant (e.g., Connect button) */
+    button.primary {
+      background: #2563eb;
+      /* Blue background */
+      color: white;
+      /* White text */
+      border-color: transparent;
+      /* No visible border */
+    }
 
-        /* Small button variant */
-        .small {
-            font-size: 13px;
-            /* Smaller text */
-            padding: 6px 8px;
-            /* Less padding */
-        }
+    /* Small button variant */
+    .small {
+      font-size: 13px;
+      /* Smaller text */
+      padding: 6px 8px;
+      /* Less padding */
+    }
 
-        /* ============================================================ */
-        /* TEXT INPUTS - Styled text input fields */
-        /* ============================================================ */
-        input[type="text"] {
-            padding: 8px;
-            /* Internal padding */
-            border-radius: 8px;
-            /* Rounded corners */
-            border: 1px solid #e6e9ef;
-            /* Light border */
-            width: 100%;
-            /* Full width */
-            box-sizing: border-box;
-            /* Include padding in width */
-        }
+    /* ============================================================ */
+    /* TEXT INPUTS - Styled text input fields */
+    /* ============================================================ */
+    input[type="text"] {
+      padding: 8px;
+      /* Internal padding */
+      border-radius: 8px;
+      /* Rounded corners */
+      border: 1px solid #e6e9ef;
+      /* Light border */
+      width: 100%;
+      /* Full width */
+      box-sizing: border-box;
+      /* Include padding in width */
+    }
 
-        /* ============================================================ */
-        /* STATUS TEXT - Connection status display */
-        /* ============================================================ */
-        .status {
-            font-size: 12px;
-            /* Small text */
-            color: #6b7280;
-            /* Gray color */
-        }
+    /* ============================================================ */
+    /* STATUS TEXT - Connection status display */
+    /* ============================================================ */
+    .status {
+      font-size: 12px;
+      /* Small text */
+      color: #6b7280;
+      /* Gray color */
+    }
 
-        /* ============================================================ */
-        /* FOOTER - Bottom page information */
-        /* ============================================================ */
-        footer {
-            font-size: 12px;
-            /* Small text */
-            color: #6b7280;
-            /* Gray color */
-            text-align: center;
-            /* Center aligned */
-            padding: 8px;
-            /* Padding around text */
-        }
-    </style>
+    /* ============================================================ */
+    /* FOOTER - Bottom page information */
+    /* ============================================================ */
+    footer {
+      font-size: 12px;
+      /* Small text */
+      color: #6b7280;
+      /* Gray color */
+      text-align: center;
+      /* Center aligned */
+      padding: 8px;
+      /* Padding around text */
+    }
+  </style>
 </head>
 
 <!-- ================================================================ -->
@@ -239,76 +239,76 @@
 
 <body>
 
-    <!-- ============================================================ -->
-    <!-- CONTROL PANEL - Left sidebar with all controls -->
-    <!-- ============================================================ -->
-    <div class="panel">
-        <div>
-            <!-- Panel title -->
-            <h3 style="margin:0 0 6px 0">Whiteboard Controls</h3>
+  <!-- ============================================================ -->
+  <!-- CONTROL PANEL - Left sidebar with all controls -->
+  <!-- ============================================================ -->
+  <div class="panel">
+    <div>
+      <!-- Panel title -->
+      <h3 style="margin:0 0 6px 0">Whiteboard Controls</h3>
 
-            <!-- ======================================================== -->
-            <!-- USER SETTINGS - Name input -->
-            <!-- ======================================================== -->
-            <div class="row" style="margin-bottom:6px">
-                <label style="flex:1">
-                    Name
-                    <input id="name" type="text" value="user-000" />
-                </label>
-            </div>
+      <!-- ======================================================== -->
+      <!-- USER SETTINGS - Name input -->
+      <!-- ======================================================== -->
+      <div class="row" style="margin-bottom:6px">
+        <label style="flex:1">
+          Name
+          <input id="name" type="text" value="user-000" />
+        </label>
+      </div>
 
-            <!-- ======================================================== -->
-            <!-- CONNECTION CONTROLS - Room ID and Connect button -->
-            <!-- ======================================================== -->
-            <div class="row">
-                <label style="flex:1">
-                    Room ID
-                    <!-- Input for room identifier (users in same room see each other's drawings) -->
-                    <input id="roomId" type="text" value="room1" />
-                </label>
-                <!-- Button to establish WebSocket connection -->
-                <button id="connectBtn" class="small">Connect</button>
-            </div>
+      <!-- ======================================================== -->
+      <!-- CONNECTION CONTROLS - Room ID and Connect button -->
+      <!-- ======================================================== -->
+      <div class="row">
+        <label style="flex:1">
+          Room ID
+          <!-- Input for room identifier (users in same room see each other's drawings) -->
+          <input id="roomId" type="text" value="room1" />
+        </label>
+        <!-- Button to establish WebSocket connection -->
+        <button id="connectBtn" class="small">Connect</button>
+      </div>
 
-            <!-- ======================================================== -->
-            <!-- DRAWING TOOLS - Tool selector, color picker, size slider -->
-            <!-- ======================================================== -->
-            <div class="row" style="margin-top:8px">
-                <!-- Tool selection dropdown -->
-                <label style="flex:1">
-                    Tool
-                    <select id="tool">
-                        <option value="pen">Pen</option> <!-- Drawing tool -->
-                        <option value="eraser">Eraser</option> <!-- Erasing tool -->
-                    </select>
-                </label>
+      <!-- ======================================================== -->
+      <!-- DRAWING TOOLS - Tool selector, color picker, size slider -->
+      <!-- ======================================================== -->
+      <div class="row" style="margin-top:8px">
+        <!-- Tool selection dropdown -->
+        <label style="flex:1">
+          Tool
+          <select id="tool">
+            <option value="pen">Pen</option> <!-- Drawing tool -->
+            <option value="eraser">Eraser</option> <!-- Erasing tool -->
+          </select>
+        </label>
 
-                <!-- Color picker (only affects pen tool) -->
-                <label>
-                    Color<br />
-                    <input id="color" type="color" value="#000000" />
-                </label>
+        <!-- Color picker (only affects pen tool) -->
+        <label>
+          Color<br />
+          <input id="color" type="color" value="#000000" />
+        </label>
 
-                <!-- Size slider for brush/eraser -->
-                <label style="width:110px">
-                    Size<br />
-                    <input id="size" type="range" min="1" max="40" value="3" />
-                </label>
-            </div>
+        <!-- Size slider for brush/eraser -->
+        <label style="width:90px">
+          Size<br />
+          <input id="size" type="range" min="1" max="40" value="3" />
+        </label>
+      </div>
 
-            <!-- ======================================================== -->
-            <!-- ACTION BUTTONS - Undo, Redo, Clear -->
-            <!-- ======================================================== -->
-            <div class="row" style="margin-top:8px">
-                <!-- <button id="undo" class="small">Undo</button> Undo last stroke -->
-                <!-- <button id="redo" class="small">Redo</button> Redo undone stroke -->
-                <button id="clear" class="small">Clear</button> <!-- Clear entire canvas -->
-            </div>
+      <!-- ======================================================== -->
+      <!-- ACTION BUTTONS - Undo, Redo, Clear -->
+      <!-- ======================================================== -->
+      <div class="row" style="margin-top:8px">
+        <!-- <button id="undo" class="small">Undo</button> Undo last stroke -->
+        <!-- <button id="redo" class="small">Redo</button> Redo undone stroke -->
+        <button id="clear" class="small">Clear</button> <!-- Clear entire canvas -->
+      </div>
 
-            <!-- ======================================================== -->
-            <!-- EXPORT/IMPORT BUTTONS - Save and load drawings -->
-            <!-- ======================================================== -->
-            <!-- <div class="row" style="margin-top:8px">
+      <!-- ======================================================== -->
+      <!-- EXPORT/IMPORT BUTTONS - Save and load drawings -->
+      <!-- ======================================================== -->
+      <!-- <div class="row" style="margin-top:8px">
                 <button id="exportPNG" class="small">Export PNG</button>
                 <button id="exportJSON" class="small">Export JSON</button>
                 <label style="display:inline-block; margin-left:6px; cursor:pointer;">
@@ -319,33 +319,33 @@
                 </label>
             </div> -->
 
-            <!-- ======================================================== -->
-            <!-- CONNECTION STATUS - Display current connection state -->
-            <!-- ======================================================== -->
-            <div style="margin-top:10px">
-                <!-- Status text updated by JavaScript ("Connected", "Disconnected", etc.) -->
-                <div class="status" id="connStatus">Not connected</div>
-            </div>
-        </div>
-
-        <!-- ======================================================== -->
-        <!-- HELP TEXT - Usage tip for users -->
-        <!-- ======================================================== -->
-        <div style="margin-top:auto; font-size:12px; color:#6b7280;">
-            Tip: Open multiple tabs and connect to the same room to test collaboration.
-        </div>
+      <!-- ======================================================== -->
+      <!-- CONNECTION STATUS - Display current connection state -->
+      <!-- ======================================================== -->
+      <div style="margin-top:10px">
+        <!-- Status text updated by JavaScript ("Connected", "Disconnected", etc.) -->
+        <div class="status" id="connStatus">Not connected</div>
+      </div>
     </div>
 
-    <!-- ============================================================ -->
-    <!-- CANVAS AREA - Main drawing surface -->
-    <!-- ============================================================ -->
-    <div class="canvas-wrap" style="flex:1; width:1000px; height: 100vh; overflow: scroll;">
-        <!-- The HTML5 canvas element where all drawing happens -->
-        <!-- JavaScript in script.js handles all drawing operations -->
-        <canvas id="board" style="min-width: 1000px; min-height: 300vh;"></canvas>
+    <!-- ======================================================== -->
+    <!-- HELP TEXT - Usage tip for users -->
+    <!-- ======================================================== -->
+    <div style="margin-top:auto; font-size:12px; color:#6b7280;">
+      Tip: Open multiple tabs and connect to the same room to test collaboration.
     </div>
+  </div>
 
-    <!--
+  <!-- ============================================================ -->
+  <!-- CANVAS AREA - Main drawing surface -->
+  <!-- ============================================================ -->
+  <div class="canvas-wrap" style="flex:1; width:1000px; height: 100vh; overflow: scroll;">
+    <!-- The HTML5 canvas element where all drawing happens -->
+    <!-- JavaScript in script.js handles all drawing operations -->
+    <canvas id="board" style="min-width: 1000px; min-height: 300vh;"></canvas>
+  </div>
+
+  <!--
 <script>
 /*
   Pure HTML Canvas Whiteboard
@@ -662,11 +662,11 @@
 </script>
 -->
 
-    <!-- ============================================================ -->
-    <!-- EXTERNAL JAVASCRIPT - All application logic -->
-    <!-- ============================================================ -->
-    <!-- The script.js file contains all the drawing, WebSocket, and UI logic -->
-    <script src="script-new.js"></script>
+  <!-- ============================================================ -->
+  <!-- EXTERNAL JAVASCRIPT - All application logic -->
+  <!-- ============================================================ -->
+  <!-- The script.js file contains all the drawing, WebSocket, and UI logic -->
+  <script src="script-new.js"></script>
 
 </body>
 
