@@ -312,7 +312,7 @@
     }
 
     connectBtn.onclick = () => {
-        let url = prompt("WebSocket URL", "ws://localhost:4000");
+        let url = prompt("WebSocket URL", "ws://excalidraw-room-server-1.onrender.com");
         if (!url) return;
 
         ws = new WebSocket(url);
