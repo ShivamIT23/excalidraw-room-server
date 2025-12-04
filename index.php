@@ -17,5 +17,5 @@
  */
 
 // Include the main whiteboard HTML interface
-require_once("./index.html");
+require_once("./whiteboard.html");
 ?>
