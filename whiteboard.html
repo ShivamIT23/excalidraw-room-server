@@ -1,0 +1,677 @@
+<!doctype html>
+<!--
+  COLLABORATIVE WHITEBOARD - HTML INTERFACE
+  
+  This is the main HTML file for the collaborative whiteboard application.
+  It provides:
+  - A control panel for user settings and drawing tools
+  - A canvas element for drawing
+  - Inline CSS for styling
+  - External JavaScript (script.js) for functionality
+-->
+<html lang="en">
+
+<head>
+    <!-- Character encoding for proper text display -->
+    <meta charset="utf-8" />
+
+    <!-- Responsive viewport settings for mobile devices -->
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+    <!-- Page title shown in browser tab -->
+    <title>Pure HTML Whiteboard (Canvas)</title>
+
+    <!-- ================================================================ -->
+    <!-- INLINE CSS STYLES -->
+    <!-- ================================================================ -->
+    <style>
+        /* ============================================================ */
+        /* CSS VARIABLES - Global design tokens */
+        /* ============================================================ */
+        :root {
+            --panel-w: 320px;
+            /* Width of the control panel */
+            /* Modern font stack for clean typography */
+            font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+        }
+
+        /* ============================================================ */
+        /* BODY - Main layout container */
+        /* ============================================================ */
+        body {
+            margin: 0;
+            /* Remove default margins */
+            display: flex;
+            /* Use flexbox for layout */
+            height: 100vh;
+            /* Full viewport height */
+            gap: 12px;
+            /* Space between panel and canvas */
+            padding: 12px;
+            /* Outer padding */
+            box-sizing: border-box;
+            /* Include padding in dimensions */
+            background: #f6f7fb;
+            /* Light gray background */
+        }
+
+        /* ============================================================ */
+        /* CONTROL PANEL - Left sidebar with controls */
+        /* ============================================================ */
+        .panel {
+            width: var(--panel-w);
+            /* Fixed width from CSS variable */
+            background: #fff;
+            /* White background */
+            border-radius: 10px;
+            /* Rounded corners */
+            box-shadow: 0 6px 18px rgba(16, 24, 40, 0.06);
+            /* Subtle shadow */
+            padding: 12px;
+            /* Internal padding */
+            display: flex;
+            /* Flexbox for vertical layout */
+            flex-direction: column;
+            /* Stack items vertically */
+            gap: 10px;
+            /* Space between items */
+        }
+
+        /* ============================================================ */
+        /* CANVAS WRAPPER - Container for the drawing canvas */
+        /* ============================================================ */
+        .canvas-wrap {
+            flex: 1;
+            /* Take remaining space */
+            border-radius: 10px;
+            /* Rounded corners */
+            overflow: hidden;
+            /* Hide overflow */
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04) inset;
+            /* Inner shadow */
+            background: white;
+            /* White background */
+            display: flex;
+            /* Flexbox layout */
+            flex-direction: column;
+            /* Stack vertically */
+        }
+
+        /* ============================================================ */
+        /* CANVAS - The actual drawing surface */
+        /* ============================================================ */
+        canvas {
+            display: block;
+            /* Remove inline spacing */
+            width: 100%;
+            /* Full width of container */
+            height: 100%;
+            /* Full height of container */
+            touch-action: none;
+            /* Disable default touch behaviors */
+        }
+
+        /* ============================================================ */
+        /* FORM LABELS - Text labels for inputs */
+        /* ============================================================ */
+        label {
+            display: block;
+            /* Block-level element */
+            font-size: 12px;
+            /* Small text */
+            color: #333;
+            /* Dark gray text */
+            margin-bottom: 6px;
+            /* Space below label */
+        }
+
+        /* ============================================================ */
+        /* COLOR PICKER - Styled color input */
+        /* ============================================================ */
+        input[type="color"] {
+            padding: 0;
+            /* No padding */
+            width: 36px;
+            /* Fixed width */
+            height: 28px;
+            /* Fixed height */
+            border: 0;
+            /* No border */
+            background: transparent;
+            /* Transparent background */
+            vertical-align: middle;
+            /* Align with text */
+        }
+
+        /* ============================================================ */
+        /* ROW LAYOUT - Horizontal flex container */
+        /* ============================================================ */
+        .row {
+            display: flex;
+            /* Flexbox layout */
+            gap: 8px;
+            /* Space between items */
+            align-items: center;
+            /* Vertically center items */
+            flex-wrap: wrap;
+            /* Wrap to next line if needed */
+        }
+
+        /* ============================================================ */
+        /* BUTTONS - Default button styling */
+        /* ============================================================ */
+        button {
+            padding: 8px 10px;
+            /* Internal padding */
+            border-radius: 8px;
+            /* Rounded corners */
+            border: 1px solid #e6e9ef;
+            /* Light border */
+            background: #fff;
+            /* White background */
+            cursor: pointer;
+            /* Pointer cursor on hover */
+        }
+
+        /* Primary button variant (e.g., Connect button) */
+        button.primary {
+            background: #2563eb;
+            /* Blue background */
+            color: white;
+            /* White text */
+            border-color: transparent;
+            /* No visible border */
+        }
+
+        /* Small button variant */
+        .small {
+            font-size: 13px;
+            /* Smaller text */
+            padding: 6px 8px;
+            /* Less padding */
+        }
+
+        /* ============================================================ */
+        /* TEXT INPUTS - Styled text input fields */
+        /* ============================================================ */
+        input[type="text"] {
+            padding: 8px;
+            /* Internal padding */
+            border-radius: 8px;
+            /* Rounded corners */
+            border: 1px solid #e6e9ef;
+            /* Light border */
+            width: 100%;
+            /* Full width */
+            box-sizing: border-box;
+            /* Include padding in width */
+        }
+
+        /* ============================================================ */
+        /* STATUS TEXT - Connection status display */
+        /* ============================================================ */
+        .status {
+            font-size: 12px;
+            /* Small text */
+            color: #6b7280;
+            /* Gray color */
+        }
+
+        /* ============================================================ */
+        /* FOOTER - Bottom page information */
+        /* ============================================================ */
+        footer {
+            font-size: 12px;
+            /* Small text */
+            color: #6b7280;
+            /* Gray color */
+            text-align: center;
+            /* Center aligned */
+            padding: 8px;
+            /* Padding around text */
+        }
+    </style>
+</head>
+
+<!-- ================================================================ -->
+<!-- BODY - Main application layout -->
+<!-- ================================================================ -->
+
+<body>
+
+    <!-- ============================================================ -->
+    <!-- CONTROL PANEL - Left sidebar with all controls -->
+    <!-- ============================================================ -->
+    <div class="panel">
+        <div>
+            <!-- Panel title -->
+            <h3 style="margin:0 0 6px 0">Whiteboard Controls</h3>
+
+            <!-- ======================================================== -->
+            <!-- USER SETTINGS - Name input -->
+            <!-- ======================================================== -->
+            <div class="row" style="margin-bottom:6px">
+                <label style="flex:1">
+                    Name
+                    <input id="name" type="text" value="user-000" />
+                </label>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- CONNECTION CONTROLS - Room ID and Connect button -->
+            <!-- ======================================================== -->
+            <div class="row">
+                <label style="flex:1">
+                    Room ID
+                    <!-- Input for room identifier (users in same room see each other's drawings) -->
+                    <input id="roomId" type="text" value="room1" />
+                </label>
+                <!-- Button to establish WebSocket connection -->
+                <button id="connectBtn" class="small">Connect</button>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- DRAWING TOOLS - Tool selector, color picker, size slider -->
+            <!-- ======================================================== -->
+            <div class="row" style="margin-top:8px">
+                <!-- Tool selection dropdown -->
+                <label style="flex:1">
+                    Tool
+                    <select id="tool">
+                        <option value="pen">Pen</option> <!-- Drawing tool -->
+                        <option value="eraser">Eraser</option> <!-- Erasing tool -->
+                    </select>
+                </label>
+
+                <!-- Color picker (only affects pen tool) -->
+                <label>
+                    Color<br />
+                    <input id="color" type="color" value="#000000" />
+                </label>
+
+                <!-- Size slider for brush/eraser -->
+                <label style="width:110px">
+                    Size<br />
+                    <input id="size" type="range" min="1" max="40" value="3" />
+                </label>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- ACTION BUTTONS - Undo, Redo, Clear -->
+            <!-- ======================================================== -->
+            <div class="row" style="margin-top:8px">
+                <button id="undo" class="small">Undo</button> <!-- Undo last stroke -->
+                <button id="redo" class="small">Redo</button> <!-- Redo undone stroke -->
+                <button id="clear" class="small">Clear</button> <!-- Clear entire canvas -->
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- EXPORT/IMPORT BUTTONS - Save and load drawings -->
+            <!-- ======================================================== -->
+            <div class="row" style="margin-top:8px">
+                <!-- Export canvas as PNG image -->
+                <button id="exportPNG" class="small">Export PNG</button>
+                <!-- Export strokes as JSON file -->
+                <button id="exportJSON" class="small">Export JSON</button>
+                <!-- Import strokes from JSON file (hidden file input with styled label) -->
+                <label style="display:inline-block; margin-left:6px; cursor:pointer;">
+                    <input id="importFile" type="file" accept=".json" style="display:none" />
+                    <span class="small"
+                        style="border:1px solid #e6e9ef; padding:6px 8px; border-radius:8px; background:#fff; cursor:pointer;">Import
+                        JSON</span>
+                </label>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- CONNECTION STATUS - Display current connection state -->
+            <!-- ======================================================== -->
+            <div style="margin-top:10px">
+                <!-- Status text updated by JavaScript ("Connected", "Disconnected", etc.) -->
+                <div class="status" id="connStatus">Not connected</div>
+            </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- HELP TEXT - Usage tip for users -->
+        <!-- ======================================================== -->
+        <div style="margin-top:auto; font-size:12px; color:#6b7280;">
+            Tip: Open multiple tabs and connect to the same room to test collaboration.
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- CANVAS AREA - Main drawing surface -->
+    <!-- ============================================================ -->
+    <div class="canvas-wrap" style="flex:1; width:1000px; height: 100vh; overflow: scroll;">
+        <!-- The HTML5 canvas element where all drawing happens -->
+        <!-- JavaScript in script.js handles all drawing operations -->
+        <canvas id="board" style="min-width: 1000px; min-height: 300vh;"></canvas>
+    </div>
+
+    <!--
+<script>
+/*
+  Pure HTML Canvas Whiteboard
+  - Strokes structure: { id, tool, color, size, points: [{x,y}, ...], user }
+  - Sends stroke to server when stroke ends:
+      { type:'stroke', roomId, payload:{ stroke } }
+  - Accepts messages with same shape and updates canvas
+*/
+
+(() => {
+  // DOM
+  const canvas = document.getElementById('board');
+  const connStatus = document.getElementById('connStatus');
+  const connectBtn = document.getElementById('connectBtn');
+  const roomInput = document.getElementById('roomId');
+  const nameInput = document.getElementById('name');
+  const toolInput = document.getElementById('tool');
+  const colorInput = document.getElementById('color');
+  const sizeInput = document.getElementById('size');
+
+  const undoBtn = document.getElementById('undo');
+  const redoBtn = document.getElementById('redo');
+  const clearBtn = document.getElementById('clear');
+  const exportPNGBtn = document.getElementById('exportPNG');
+  const exportJSONBtn = document.getElementById('exportJSON');
+  const importFile = document.getElementById('importFile');
+
+  // State
+  let strokes = [];               // committed strokes
+  let drawingStroke = null;       // stroke in progress
+  const undoStack = [];
+  const redoStack = [];
+
+  // WebSocket
+  let ws = null;
+
+  // Canvas setup & high-DPI
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(300, rect.width * dpr);
+    canvas.height = Math.max(150, rect.height * dpr);
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    redraw();
+  }
+
+  // Compute mouse/touch pos relative to canvas CSS box
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    if (e.touches && e.touches[0]) {
+      return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+    } else {
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+  }
+
+  // Render all strokes
+  function redraw() {
+    const ctx = canvas.getContext('2d');
+    // clear
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Because we scaled canvas for DPR in resizeCanvas, drawing still uses CSS pixels
+    for (const s of strokes) drawStroke(ctx, s);
+    // draw in-progress stroke
+    if (drawingStroke) drawStroke(ctx, drawingStroke);
+  }
+
+  function drawStroke(ctx, s) {
+    if (!s || !s.points || s.points.length === 0) return;
+    ctx.save();
+    if (s.tool === 'eraser') {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.strokeStyle = '#000'; // color ignored for eraser but keep consistent
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = s.color || '#000';
+    }
+    ctx.lineWidth = s.size || 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    const p0 = s.points[0];
+    ctx.moveTo(p0.x, p0.y);
+    for (let i = 1; i < s.points.length; i++) {
+      const p = s.points[i];
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Begin/extend/end stroke
+  function beginStroke(point) {
+    drawingStroke = {
+      id: 's_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+      tool: toolInput.value,
+      color: colorInput.value,
+      size: Number(sizeInput.value),
+      points: [point],
+      user: { name: nameInput.value || 'anon' }
+    };
+    redraw();
+  }
+  function extendStroke(point) {
+    if (!drawingStroke) return;
+    drawingStroke.points.push(point);
+    // lightweight render: draw last segment only
+    const ctx = canvas.getContext('2d');
+    const pts = drawingStroke.points;
+    if (pts.length > 1) {
+      const a = pts[pts.length - 2], b = pts[pts.length - 1];
+      ctx.save();
+      if (drawingStroke.tool === 'eraser') ctx.globalCompositeOperation = 'destination-out';
+      else ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = drawingStroke.color;
+      ctx.lineWidth = drawingStroke.size;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  function endStroke() {
+    if (!drawingStroke) return;
+    strokes.push(drawingStroke);
+    undoStack.push({ action: 'add', stroke: drawingStroke });
+    redoStack.length = 0;
+    // broadcast
+    sendWS({ type: 'stroke', roomId: roomInput.value, payload: { stroke: drawingStroke }});
+    drawingStroke = null;
+    redraw();
+  }
+
+  // Pointer/touch handlers
+  let isPointerDown = false;
+  function onPointerDown(e) {
+    isPointerDown = true;
+    const p = getPos(e);
+    beginStroke(p);
+    e.preventDefault();
+  }
+  function onPointerMove(e) {
+    if (!isPointerDown) return;
+    const p = getPos(e);
+    extendStroke(p);
+    e.preventDefault();
+  }
+  function onPointerUp(e) {
+    if (!isPointerDown) return;
+    isPointerDown = false;
+    endStroke();
+    e.preventDefault();
+  }
+
+  // Undo/Redo/Clear
+  function doUndo() {
+    const op = undoStack.pop();
+    if (!op) return;
+    if (op.action === 'add') {
+      strokes = strokes.filter(s => s.id !== op.stroke.id);
+      redoStack.push(op);
+      redraw();
+    } else if (op.action === 'clear') {
+      strokes = op.snapshot || [];
+      redoStack.push(op);
+      redraw();
+    }
+  }
+  function doRedo() {
+    const op = redoStack.pop();
+    if (!op) return;
+    if (op.action === 'add') {
+      strokes.push(op.stroke);
+      undoStack.push(op);
+      redraw();
+    } else if (op.action === 'clear') {
+      undoStack.push(op);
+      strokes = [];
+      redraw();
+    }
+  }
+  function doClear(broadcast = true) {
+    undoStack.push({ action: 'clear', snapshot: strokes.slice() });
+    redoStack.length = 0;
+    strokes = [];
+    redraw();
+    if (broadcast) sendWS({ type: 'clear', roomId: roomInput.value, payload: {} });
+  }
+
+  // Export / Import
+  function exportPNG() {
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `whiteboard_${roomInput.value||'room'}.png`; a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify({ strokes })], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `whiteboard_${roomInput.value||'room'}.json`; a.click();
+    URL.revokeObjectURL(url);
+  }
+  function importJSONFile(file) {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (Array.isArray(parsed.strokes)) {
+          strokes = parsed.strokes;
+          undoStack.length = 0; redoStack.length = 0;
+          redraw();
+          // broadcast snapshot to others
+          sendWS({ type: 'snapshot', roomId: roomInput.value, payload: { strokes }});
+        } else {
+          alert('Invalid JSON: missing strokes array');
+        }
+      } catch (err) {
+        alert('Invalid JSON file');
+      }
+    };
+    r.readAsText(file);
+  }
+
+  // WebSocket helpers
+  function setStatus(s, color='') {
+    connStatus.textContent = s;
+    connStatus.style.color = color || '';
+  }
+
+  function connectWS() {
+    if (ws && ws.readyState === WebSocket.OPEN) { ws.close(); }
+    // Ask user for server URL. Default to localhost:4000
+    let url = prompt('WebSocket server URL (ws:// or wss://). Leave blank for ws://localhost:4000', 'ws://localhost:4000');
+    if (!url) return;
+    try {
+      ws = new WebSocket(url);
+    } catch (err) {
+      alert('Invalid WebSocket URL');
+      return;
+    }
+    ws.addEventListener('open', () => {
+      setStatus('Connected', 'green');
+      // send join
+      sendWS({ type: 'join', roomId: roomInput.value, payload: { user: { name: nameInput.value } }});
+    });
+    ws.addEventListener('message', (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.roomId && msg.roomId !== roomInput.value) return;
+        if (msg.type === 'stroke' && msg.payload?.stroke) {
+          strokes.push(msg.payload.stroke);
+          redraw();
+        } else if (msg.type === 'clear') {
+          strokes = [];
+          undoStack.length = 0; redoStack.length = 0;
+          redraw();
+        } else if (msg.type === 'snapshot' && msg.payload?.strokes) {
+          strokes = msg.payload.strokes;
+          undoStack.length = 0; redoStack.length = 0;
+          redraw();
+        }
+      } catch (e) {
+        console.error('ws parse', e);
+      }
+    });
+    ws.addEventListener('close', () => setStatus('Disconnected'));
+    ws.addEventListener('error', (e) => {
+      setStatus('Error', 'red');
+      console.error('ws error', e);
+    });
+  }
+
+  function sendWS(obj) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify(obj));
+  }
+
+  // Attach UI
+  connectBtn.addEventListener('click', connectWS);
+  undoBtn.addEventListener('click', doUndo);
+  redoBtn.addEventListener('click', doRedo);
+  clearBtn.addEventListener('click', () => doClear(true));
+  exportPNGBtn.addEventListener('click', exportPNG);
+  exportJSONBtn.addEventListener('click', exportJSON);
+  importFile.addEventListener('change', (e) => importJSONFile(e.target.files[0]));
+
+  // Canvas events (pointer)
+  canvas.addEventListener('mousedown', onPointerDown);
+  window.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('mouseup', onPointerUp);
+
+  // Touch
+  canvas.addEventListener('touchstart', onPointerDown, { passive:false });
+  window.addEventListener('touchmove', onPointerMove, { passive:false });
+  window.addEventListener('touchend', onPointerUp);
+
+  // Resize handling
+  window.addEventListener('resize', () => {
+    // small debounce
+    clearTimeout(window._wb_resize_timeout);
+    window._wb_resize_timeout = setTimeout(resizeCanvas, 120);
+  });
+
+  // initial
+  setTimeout(resizeCanvas, 50);
+  setStatus('Not connected');
+})();
+</script>
+-->
+
+    <!-- ============================================================ -->
+    <!-- EXTERNAL JAVASCRIPT - All application logic -->
+    <!-- ============================================================ -->
+    <!-- The script.js file contains all the drawing, WebSocket, and UI logic -->
+    <script src="script-new.js"></script>
+
+</body>
+
+</html>
+<!-- End of Collaborative Whiteboard Application -->
