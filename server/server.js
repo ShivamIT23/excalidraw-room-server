@@ -49,9 +49,9 @@ io.on("connection", (socket) => {
         socket.roomId = roomId;
         socket.user = payload?.user || {};
         
-        // Join the Socket.IO room
+    // Join the Socket.IO room
         socket.join(roomId);
-        
+
         // Initialize chat rate limiting
         socket.chatRate = {
             count: 0,
@@ -63,6 +63,19 @@ io.on("connection", (socket) => {
         }, 60000);
 
         console.log("User joined:", socket.user?.name || "anon", "room:", roomId);
+
+        // Broadcast user_join to others
+        socket.to(roomId).emit("user_join", {
+            roomId,
+            payload: { user: socket.user }
+        });
+
+        // Broadcast room_users count to EVERYONE (including self)
+        const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+        io.to(roomId).emit("room_users", {
+            roomId,
+            payload: { count: roomSize }
+        });
 
         const room = getRoom(roomId);
 
@@ -208,6 +221,14 @@ io.on("connection", (socket) => {
     socket.on("disconnect", () => {
         if (socket.chatRate?.timer) clearInterval(socket.chatRate.timer);
         console.log("Client disconnected:", socket.id);
+
+        if (socket.roomId) {
+            const roomSize = io.sockets.adapter.rooms.get(socket.roomId)?.size || 0;
+            io.to(socket.roomId).emit("room_users", {
+                roomId: socket.roomId,
+                payload: { count: roomSize }
+            });
+        }
     });
 });
 
