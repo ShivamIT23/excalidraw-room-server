@@ -2,166 +2,219 @@ import express from "express";
 import http from "http";
 import cors from "cors";
 import bodyParser from "body-parser";
-import { WebSocketServer } from "ws";
+import { Server } from "socket.io";
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
+});
 
 /**
  * Room structure:
  * rooms = {
  *   roomId: {
- *     clients: [ws, ...],
- *     snapshot: { strokes: [ {...}, ... ] }
+ *     snapshot: { strokes: [ {...}, ... ] },
+ *     chat: [ {...}, ... ]
  *   }
  * }
  */
 const rooms = {};
-const MAX_STROKES = 5000; // cap to avoid unbounded memory growth
+const MAX_CHAT_HISTORY = 10;
+const MAX_CHAT_PER_MINUTE = 20;
+
 
 function getRoom(roomId) {
-    if (!rooms[roomId]) rooms[roomId] = { clients: [], snapshot: { strokes: [] } };
+    if (!rooms[roomId]) rooms[roomId] = { snapshot: { strokes: [] }, chat: [] };
     return rooms[roomId];
-}
-
-function broadcast(roomId, message, except = null) {
-    const room = rooms[roomId];
-    if (!room) return;
-    for (const client of room.clients) {
-        if (client !== except && client.readyState === 1) client.send(message);
-    }
 }
 
 function pushStrokeToSnapshot(roomId, stroke) {
     const room = getRoom(roomId);
     room.snapshot = room.snapshot || { strokes: [] };
     room.snapshot.strokes.push(stroke);
-    // enforce max strokes
-    if (room.snapshot.strokes.length > MAX_STROKES) {
-        // drop oldest strokes
-        room.snapshot.strokes.splice(0, room.snapshot.strokes.length - MAX_STROKES);
-    }
 }
 
-wss.on("connection", (ws) => {
-    ws.isAlive = true;
-    ws.on("pong", () => (ws.isAlive = true));
+io.on("connection", (socket) => {
+    console.log("Client connected:", socket.id);
 
-    ws.on("message", (raw) => {
-        let msg = null;
-        try {
-            msg = JSON.parse(raw);
-        } catch (err) {
-            console.warn("Invalid JSON received:", raw);
-            return;
+    // Handle join event
+    socket.on("join", ({ roomId, payload }) => {
+        socket.roomId = roomId;
+        socket.user = payload?.user || {};
+        
+        // Join the Socket.IO room
+        socket.join(roomId);
+        
+        // Initialize chat rate limiting
+        socket.chatRate = {
+            count: 0,
+            timer: null
+        };
+
+        socket.chatRate.timer = setInterval(() => {
+            socket.chatRate.count = 0;
+        }, 60000);
+
+        console.log("User joined:", socket.user?.name || "anon", "room:", roomId);
+
+        const room = getRoom(roomId);
+
+        // send current snapshot (full canvas) to the joining client
+        if (room.snapshot && Array.isArray(room.snapshot.strokes)) {
+            socket.emit("snapshot", { roomId, payload: room.snapshot });
         }
 
-        const { type, roomId, payload } = msg;
-
-        if (type === "join") {
-            ws.roomId = roomId;
-            ws.user = payload?.user || {};
-            const room = getRoom(roomId);
-            room.clients.push(ws);
-
-            console.log("User joined:", ws.user?.name || "anon", "room:", roomId);
-
-            // send current snapshot (full canvas) to the joining client
-            if (room.snapshot && Array.isArray(room.snapshot.strokes)) {
-                ws.send(JSON.stringify({ type: "snapshot", roomId, payload: room.snapshot }));
-            }
-
-            return;
+        // send chat history
+        if (room.chat?.length) {
+            socket.emit("chat_history", {
+                roomId,
+                payload: room.chat
+            });
         }
-
-        // ignore any non-joined client messages
-        if (!ws.roomId) return;
-
-        const room = getRoom(ws.roomId);
-
-        // Live streaming of stroke points while drawing
-        // payload: { strokeId, point: {x,y}, meta? }
-        if (type === "stroke_chunk") {
-            // Broadcast chunks to others so they can render preview in real-time
-            // We do NOT store chunks in snapshot until stroke_end arrives
-            broadcast(ws.roomId, JSON.stringify({ type: "stroke_chunk", roomId: ws.roomId, payload }), ws);
-            return;
-        }
-
-        // Final stroke sent as a separate event after streaming (preferred)
-        // payload: { stroke: { id, tool, color, size, points: [...] , user } }
-        if (type === "stroke_end") {
-            // append to snapshot and broadcast finalized stroke
-            const stroke = payload?.stroke;
-            if (stroke) {
-                pushStrokeToSnapshot(ws.roomId, stroke);
-                broadcast(ws.roomId, JSON.stringify({ type: "stroke", roomId: ws.roomId, payload: { stroke } }), ws);
-            }
-            return;
-        }
-
-        // Backwards-compatible single-message stroke (legacy)
-        if (type === "stroke") {
-            const stroke = payload?.stroke;
-            if (stroke) {
-                pushStrokeToSnapshot(ws.roomId, stroke);
-                broadcast(ws.roomId, JSON.stringify({ type: "stroke", roomId: ws.roomId, payload: { stroke } }), ws);
-            }
-            return;
-        }
-
-        // Clear canvas for the room
-        if (type === "clear") {
-            // reset snapshot
-            rooms[ws.roomId].snapshot = { strokes: [] };
-            broadcast(ws.roomId, JSON.stringify({ type: "clear", roomId: ws.roomId, payload: {} }), ws);
-            return;
-        }
-
-        // Full snapshot (e.g., import JSON)
-        if (type === "snapshot") {
-            // payload should be { strokes: [...] }
-            rooms[ws.roomId].snapshot = payload || { strokes: [] };
-            // enforce cap
-            if (rooms[ws.roomId].snapshot.strokes.length > MAX_STROKES) {
-                rooms[ws.roomId].snapshot.strokes = rooms[ws.roomId].snapshot.strokes.slice(-MAX_STROKES);
-            }
-            broadcast(ws.roomId, JSON.stringify({ type: "snapshot", roomId: ws.roomId, payload: rooms[ws.roomId].snapshot }), ws);
-            return;
-        }
-
-        // Unknown type - ignore
     });
 
-    ws.on("close", () => {
-        if (ws.roomId) {
-            const r = rooms[ws.roomId];
-            if (r) r.clients = r.clients.filter((c) => c !== ws);
+    // Live streaming of stroke points while drawing
+    socket.on("stroke_chunk", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        // Broadcast chunks to others so they can render preview in real-time
+        socket.to(socket.roomId).emit("stroke_chunk", { roomId: socket.roomId, payload });
+    });
+
+    // Final stroke sent as a separate event after streaming
+    socket.on("stroke_end", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        const stroke = payload?.stroke;
+        if (stroke) {
+            pushStrokeToSnapshot(socket.roomId, stroke);
+            socket.to(socket.roomId).emit("stroke", { roomId: socket.roomId, payload: { stroke } });
         }
+    });
+
+    // Typing indicator
+    socket.on("typing", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        socket.to(socket.roomId).emit("typing", {
+            roomId: socket.roomId,
+            payload: {
+                user: socket.user,
+                isTyping: payload.isTyping
+            }
+        });
+    });
+
+    // Viewport synchronization
+    socket.on("viewport_change", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        socket.to(socket.roomId).emit("viewport_change", {
+            roomId: socket.roomId,
+            payload: {
+                user: socket.user,
+                scrollTop: payload.scrollTop,
+                scrollLeft: payload.scrollLeft
+            }
+        });
+    });
+
+    // Layout synchronization
+    socket.on("layout_change", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        // Broadcast to everyone in the room (including sender if needed, but usually sender updates locally)
+        // Using socket.to() excludes sender, which is fine since sender initiates it.
+        // If we want to enforce server-source-of-truth, we'd use io.to() and not update locally until confirmed.
+        // For responsiveness, local update + broadcast is better.
+        socket.to(socket.roomId).emit("layout_change", {
+            roomId: socket.roomId,
+            payload: {
+                layout: payload.layout // 'default' or 'swapped'
+            }
+        });
+    });
+
+    // Chat messages
+    socket.on("chat", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        socket.chatRate.count++;
+        if (socket.chatRate.count > MAX_CHAT_PER_MINUTE) {
+            socket.emit("error", {
+                message: "Message limit exceeded. Please wait a minute."
+            });
+            return;
+        }
+        
+        const messageObj = {
+            user: socket.user,
+            message: payload.message,
+            timestamp: Date.now()
+        };
+
+        // save to chat history (keep last 10 only)
+        const room = getRoom(socket.roomId);
+        room.chat.push(messageObj);
+        if (room.chat.length > MAX_CHAT_HISTORY) {
+            room.chat.splice(0, room.chat.length - MAX_CHAT_HISTORY);
+        }
+
+        // broadcast to others (including sender for confirmation)
+        io.to(socket.roomId).emit("chat", {
+            roomId: socket.roomId,
+            payload: messageObj
+        });
+    });
+
+    // Backwards-compatible single-message stroke (legacy)
+    socket.on("stroke", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        const stroke = payload?.stroke;
+        if (stroke) {
+            pushStrokeToSnapshot(socket.roomId, stroke);
+            socket.to(socket.roomId).emit("stroke", { roomId: socket.roomId, payload: { stroke } });
+        }
+    });
+
+    // Clear canvas for the room
+    socket.on("clear", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        // reset snapshot
+        rooms[socket.roomId].snapshot = { strokes: [] };
+        // Broadcast to all clients in room including sender
+        io.to(socket.roomId).emit("clear", { roomId: socket.roomId, payload: {} });
+    });
+
+    // Full snapshot (e.g., import JSON)
+    socket.on("snapshot", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        // payload should be { strokes: [...] }
+        rooms[socket.roomId].snapshot = payload || { strokes: [] };
+        socket.to(socket.roomId).emit("snapshot", { roomId: socket.roomId, payload: rooms[socket.roomId].snapshot });
+    });
+
+    // Handle disconnect
+    socket.on("disconnect", () => {
+        if (socket.chatRate?.timer) clearInterval(socket.chatRate.timer);
+        console.log("Client disconnected:", socket.id);
     });
 });
-
-// heartbeat to clean dead connections
-setInterval(() => {
-    wss.clients.forEach((ws) => {
-        if (!ws.isAlive) return ws.terminate();
-        ws.isAlive = false;
-        ws.ping();
-    });
-}, 30000);
 
 // REST endpoints to save/load snapshots
 app.post("/save/:roomId", (req, res) => {
     const room = getRoom(req.params.roomId);
     room.snapshot = req.body || { strokes: [] };
-    // cap
-    if (room.snapshot.strokes.length > MAX_STROKES) {
-        room.snapshot.strokes = room.snapshot.strokes.slice(-MAX_STROKES);
-    }
     res.json({ ok: true });
 });
 
@@ -171,5 +224,5 @@ app.get("/load/:roomId", (req, res) => {
     res.json({ ok: true, snapshot: room.snapshot });
 });
 
-const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log("WS Whiteboard Server running on", PORT));
+const PORT = process.env.PORT || 4001;
+server.listen(PORT, () => console.log("Socket.IO Whiteboard Server running on", PORT));
