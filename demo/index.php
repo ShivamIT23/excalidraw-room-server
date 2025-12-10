@@ -241,6 +241,9 @@ $metakeywords = "TutorArc, demo, one-to-one tutoring, online tutoring platform, 
             }
         });
     </script>
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" />
 </head>
 
 <body class="bg-gray-50 overflow-hidden max-w-svw max-h-svh">
