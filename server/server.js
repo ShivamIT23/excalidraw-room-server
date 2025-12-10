@@ -8,6 +8,10 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+app.get("/", (req, res) => {
+  res.send("Hello from tutorarc.com Node app\n");
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
@@ -31,7 +35,7 @@ const MAX_CHAT_PER_MINUTE = 20;
 
 
 function getRoom(roomId) {
-    if (!rooms[roomId]) rooms[roomId] = { snapshot: { strokes: [] }, chat: [] };
+    if (!rooms[roomId]) rooms[roomId] = { snapshot: { strokes: [] }, chat: [], isChatEnabled: true };
     return rooms[roomId];
 }
 
@@ -47,9 +51,13 @@ io.on("connection", (socket) => {
     // Handle join event
     socket.on("join", ({ roomId, payload }) => {
         socket.roomId = roomId;
+        // TRUST THE CLIENT PAYLOAD FOR NOW regarding isTeacher
         socket.user = payload?.user || {};
+        // Ensure isTeacher is boolean if present
+        if (socket.user.isTeacher === 'true') socket.user.isTeacher = true;
+        if (socket.user.isTeacher === 'false') socket.user.isTeacher = false;
         
-    // Join the Socket.IO room
+        // Join the Socket.IO room
         socket.join(roomId);
 
         // Initialize chat rate limiting
@@ -62,7 +70,7 @@ io.on("connection", (socket) => {
             socket.chatRate.count = 0;
         }, 60000);
 
-        console.log("User joined:", socket.user?.name || "anon", "room:", roomId);
+        console.log("User joined:", socket.user?.name || "anon", "isTeacher:", socket.user?.isTeacher, "room:", roomId);
 
         // Broadcast user_join to others
         socket.to(roomId).emit("user_join", {
@@ -85,12 +93,18 @@ io.on("connection", (socket) => {
         }
 
         // send chat history
-        if (room.chat?.length) {
+        if (room.chat && room.chat.length > 0) {
             socket.emit("chat_history", {
                 roomId,
                 payload: room.chat
             });
         }
+        
+        // send current chat state
+        socket.emit("chat_state", {
+            roomId,
+            payload: { enabled: room.isChatEnabled !== false } // Default true
+        });
     });
 
     // Live streaming of stroke points while drawing
@@ -125,9 +139,14 @@ io.on("connection", (socket) => {
         });
     });
 
-    // Viewport synchronization
+    // Viewport synchronization - TEACHER ONLY
     socket.on("viewport_change", ({ roomId, payload }) => {
         if (!socket.roomId) return;
+        
+        // Only teacher can control viewport
+        if (!socket.user || !socket.user.isTeacher) {
+            return;
+        }
         
         socket.to(socket.roomId).emit("viewport_change", {
             roomId: socket.roomId,
@@ -158,6 +177,10 @@ io.on("connection", (socket) => {
     // Chat messages
     socket.on("chat", ({ roomId, payload }) => {
         if (!socket.roomId) return;
+
+        const room = getRoom(socket.roomId);
+
+        if(!room.isChatEnabled) return;
         
         socket.chatRate.count++;
         if (socket.chatRate.count > MAX_CHAT_PER_MINUTE) {
@@ -168,13 +191,16 @@ io.on("connection", (socket) => {
         }
         
         const messageObj = {
+            id: payload.id, // Pass ID from client or generate one
             user: socket.user,
             message: payload.message,
             timestamp: Date.now()
         };
+        // Ensure ID
+        if (!messageObj.id) messageObj.id = 'msg_' + Date.now() + Math.random().toString(36).substr(2, 5);
 
         // save to chat history (keep last 10 only)
-        const room = getRoom(socket.roomId);
+        // room is already defined above
         room.chat.push(messageObj);
         if (room.chat.length > MAX_CHAT_HISTORY) {
             room.chat.splice(0, room.chat.length - MAX_CHAT_HISTORY);
@@ -184,6 +210,63 @@ io.on("connection", (socket) => {
         io.to(socket.roomId).emit("chat", {
             roomId: socket.roomId,
             payload: messageObj
+        });
+    });
+    
+    // Chat delete - TEACHER ONLY
+    socket.on("chat_delete", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        if (!socket.user || !socket.user.isTeacher) {
+            return;
+        }
+        
+        const msgId = payload.id;
+        if (!msgId) return;
+        
+        const room = getRoom(roomId);
+        // Remove from history
+        room.chat = room.chat.filter(m => m.id !== msgId);
+        
+        // Broadcast delete
+        io.to(roomId).emit("chat_delete", {
+            roomId,
+            payload: { id: msgId }
+        });
+    });
+
+    // Chat clear - TEACHER ONLY
+    socket.on("chat_clear", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        
+        if (!socket.user || !socket.user.isTeacher) {
+            return;
+        }
+        
+        const room = getRoom(roomId);
+        // Clear history
+        room.chat = [];
+
+        console.log(roomId);
+        
+        // Broadcast clear
+        io.to(roomId).emit("chat_clear", {
+            roomId,
+            payload: {}
+        });
+    });
+
+    // Chat Toggle - TEACHER ONLY
+    socket.on("chat_toggle", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+        if (!socket.user || !socket.user.isTeacher) return;
+        
+        const room = getRoom(roomId);
+        room.isChatEnabled = payload.enabled;
+
+        io.to(roomId).emit("chat_state", {
+            roomId,
+            payload: { enabled: room.isChatEnabled }
         });
     });
 
@@ -198,7 +281,7 @@ io.on("connection", (socket) => {
         }
     });
 
-    // Clear canvas for the room
+    // Clear canvas for the room - TEACHER ONLY
     socket.on("clear", ({ roomId, payload }) => {
         if (!socket.roomId) return;
         

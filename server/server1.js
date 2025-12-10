@@ -1,273 +1,309 @@
-// /**
-//  * COLLABORATIVE WHITEBOARD - WEBSOCKET SERVER
-//  * 
-//  * This server handles real-time communication between multiple clients
-//  * drawing on a shared whiteboard canvas. It uses WebSocket for bidirectional
-//  * communication and Express for optional REST API endpoints.
-//  */
+import express from "express";
+import http from "http";
+import cors from "cors";
+import bodyParser from "body-parser";
+import { Server } from "socket.io";
 
-// // ============================================================================
-// // IMPORTS AND DEPENDENCIES
-// // ============================================================================
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
 
-// import express from "express";        // Web framework for REST API
-// import http from "http";              // HTTP server to attach WebSocket
-// import cors from "cors";              // Enable Cross-Origin Resource Sharing
-// import bodyParser from "body-parser"; // Parse JSON request bodies
-// import { WebSocketServer } from "ws"; // WebSocket server implementation
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
+});
 
-// // ============================================================================
-// // EXPRESS APP SETUP
-// // ============================================================================
+/**
+ * Room structure:
+ * rooms = {
+ *   roomId: {
+ *     snapshot: { strokes: [ {...}, ... ] },
+ *     chat: [ {...}, ... ]
+ *   }
+ * }
+ */
+const rooms = {};
+const MAX_CHAT_HISTORY = 10;
+const MAX_CHAT_PER_MINUTE = 20;
 
-// const app = express();
-// app.use(cors());                      // Allow requests from any origin
-// app.use(bodyParser.json());           // Parse incoming JSON payloads
 
-// // ============================================================================
-// // HTTP & WEBSOCKET SERVER SETUP
-// // ============================================================================
+function getRoom(roomId) {
+    if (!rooms[roomId]) rooms[roomId] = { snapshot: { strokes: [] }, chat: [] };
+    return rooms[roomId];
+}
 
-// // Create HTTP server and attach WebSocket server to it
-// const server = http.createServer(app);
-// const wss = new WebSocketServer({ server });
+function pushStrokeToSnapshot(roomId, stroke) {
+    const room = getRoom(roomId);
+    room.snapshot = room.snapshot || { strokes: [] };
+    room.snapshot.strokes.push(stroke);
+}
 
-// // ============================================================================
-// // ROOM MANAGEMENT DATA STRUCTURE
-// // ============================================================================
+io.on("connection", (socket) => {
+    console.log("Client connected:", socket.id);
 
-// /*
-//     Room Data Structure:
-//     rooms = {
-//       "room1": {
-//         clients: [ws1, ws2, ...],      // Array of WebSocket connections
-//         snapshot: { strokes: [...] }   // Current state of the canvas
-//       }
-//     }
-    
-//     - Each room is identified by a unique roomId (string)
-//     - clients: Array of active WebSocket connections in this room
-//     - snapshot: The latest full canvas state (all strokes)
-// */
-// const rooms = {};
+    // Handle join event
+    socket.on("join", ({ roomId, payload }) => {
+        socket.roomId = roomId;
+        // TRUST THE CLIENT PAYLOAD FOR NOW regarding isTeacher
+        socket.user = payload?.user || {};
+        // Ensure isTeacher is boolean if present
+        if (socket.user.isTeacher === 'true') socket.user.isTeacher = true;
+        if (socket.user.isTeacher === 'false') socket.user.isTeacher = false;
 
-// /**
-//  * Get or create a room by ID
-//  * @param {string} roomId - The unique identifier for the room
-//  * @returns {Object} Room object with clients array and snapshot
-//  */
-// function getRoom(roomId) {
-//     // If room doesn't exist, create it with empty clients and null snapshot
-//     if (!rooms[roomId]) {
-//         rooms[roomId] = { clients: [], snapshot: null };
-//     }
-//     return rooms[roomId];
-// }
+        // Join the Socket.IO room
+        socket.join(roomId);
 
-// /**
-//  * Broadcast a message to all clients in a room except the sender
-//  * @param {string} roomId - The room to broadcast to
-//  * @param {string} message - JSON string message to send
-//  * @param {WebSocket} except - WebSocket connection to exclude (usually the sender)
-//  */
-// function broadcast(roomId, message, except = null) {
-//     const room = rooms[roomId];
-//     if (!room) return; // Room doesn't exist, nothing to broadcast
+        // Initialize chat rate limiting
+        socket.chatRate = {
+            count: 0,
+            timer: null
+        };
 
-//     // Send message to all clients in the room
-//     room.clients.forEach((client) => {
-//         // Skip the sender and only send to open connections (readyState === 1)
-//         if (client !== except && client.readyState === 1) {
-//             client.send(message);
-//         }
-//     });
-// }
+        socket.chatRate.timer = setInterval(() => {
+            socket.chatRate.count = 0;
+        }, 60000);
 
-// // ============================================================================
-// // WEBSOCKET CONNECTION HANDLING
-// // ============================================================================
+        console.log("User joined:", socket.user?.name || "anon", "isTeacher:", socket.user?.isTeacher, "room:", roomId);
 
-// /**
-//  * Handle new WebSocket connections
-//  * Each client that connects triggers this event
-//  */
-// wss.on("connection", (ws) => {
-//     // Mark connection as alive for heartbeat mechanism
-//     ws.isAlive = true;
+        // Broadcast user_join to others
+        socket.to(roomId).emit("user_join", {
+            roomId,
+            payload: { user: socket.user }
+        });
 
-//     /**
-//      * Heartbeat: When client responds to ping with pong, mark as alive
-//      * This helps detect and remove dead connections
-//      */
-//     ws.on("pong", () => (ws.isAlive = true));
+        // Broadcast room_users count to EVERYONE (including self)
+        const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+        io.to(roomId).emit("room_users", {
+            roomId,
+            payload: { count: roomSize }
+        });
 
-//     /**
-//      * Handle incoming messages from clients
-//      * Messages are expected to be JSON with format:
-//      * { type: string, roomId: string, payload: object }
-//      */
-//     ws.on("message", (raw) => {
-//         let msg = null;
+        const room = getRoom(roomId);
 
-//         // Parse incoming JSON message
-//         try {
-//             msg = JSON.parse(raw);
-//         } catch (err) {
-//             console.log("Invalid JSON received:", raw);
-//             return; // Ignore malformed messages
-//         }
+        // send current snapshot (full canvas) to the joining client
+        if (room.snapshot && Array.isArray(room.snapshot.strokes)) {
+            socket.emit("snapshot", { roomId, payload: room.snapshot });
+        }
 
-//         // Extract message components
-//         const { type, roomId, payload } = msg;
+        // send chat history
+        if (room.chat?.length) {
+            socket.emit("chat_history", {
+                roomId,
+                payload: room.chat
+            });
+        }
+    });
 
-//         // ====================================================================
-//         // JOIN EVENT - User joins a room
-//         // ====================================================================
-//         if (type === "join") {
-//             // Store room and user info on the WebSocket connection
-//             ws.roomId = roomId;
-//             ws.user = payload?.user || {};
+    // Live streaming of stroke points while drawing
+    socket.on("stroke_chunk", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
 
-//             // Get or create the room
-//             const room = getRoom(roomId);
+        // Broadcast chunks to others so they can render preview in real-time
+        socket.to(socket.roomId).emit("stroke_chunk", { roomId: socket.roomId, payload });
+    });
 
-//             // Add this client to the room's client list
-//             room.clients.push(ws);
+    // Final stroke sent as a separate event after streaming
+    socket.on("stroke_end", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
 
-//             console.log("User joined:", ws.user?.name, "Room:", roomId);
+        const stroke = payload?.stroke;
+        if (stroke) {
+            pushStrokeToSnapshot(socket.roomId, stroke);
+            socket.to(socket.roomId).emit("stroke", { roomId: socket.roomId, payload: { stroke } });
+        }
+    });
 
-//             // Send the current canvas state to the new user
-//             // This ensures they see what others have already drawn
-//             if (room.snapshot) {
-//                 ws.send(
-//                     JSON.stringify({
-//                         type: "snapshot",
-//                         roomId,
-//                         payload: room.snapshot,
-//                     })
-//                 );
-//             }
+    // Typing indicator
+    socket.on("typing", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
 
-//             return; // Done processing join event
-//         }
+        socket.to(socket.roomId).emit("typing", {
+            roomId: socket.roomId,
+            payload: {
+                user: socket.user,
+                isTyping: payload.isTyping
+            }
+        });
+    });
 
-//         // ====================================================================
-//         // SECURITY CHECK - Ignore messages from users who haven't joined
-//         // ====================================================================
-//         if (!ws.roomId) return;
+    // Viewport synchronization - TEACHER ONLY
+    socket.on("viewport_change", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
 
-//         // Get the room this user is in
-//         const room = getRoom(ws.roomId);
+        // Only teacher can control viewport
+        if (!socket.user || !socket.user.isTeacher) {
+            return;
+        }
 
-//         // ====================================================================
-//         // STROKE EVENT - User drew a new stroke
-//         // ====================================================================
-//         if (type === "stroke") {
-//             // Broadcast the stroke to all other users in the room
-//             // Note: We don't store individual strokes in snapshot here
-//             // The snapshot is only updated when explicitly set (import/clear)
-//             broadcast(ws.roomId, JSON.stringify(msg), ws);
-//         }
+        socket.to(socket.roomId).emit("viewport_change", {
+            roomId: socket.roomId,
+            payload: {
+                user: socket.user,
+                scrollTop: payload.scrollTop,
+                scrollLeft: payload.scrollLeft
+            }
+        });
+    });
 
-//         // ====================================================================
-//         // CLEAR EVENT - User cleared the canvas
-//         // ====================================================================
-//         else if (type === "clear") {
-//             // Reset the room's snapshot to empty
-//             room.snapshot = { strokes: [] };
+    // Layout synchronization
+    socket.on("layout_change", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
 
-//             // Tell all other users to clear their canvas
-//             broadcast(ws.roomId, JSON.stringify(msg), ws);
-//         }
+        // Broadcast to everyone in the room (including sender if needed, but usually sender updates locally)
+        // Using socket.to() excludes sender, which is fine since sender initiates it.
+        // If we want to enforce server-source-of-truth, we'd use io.to() and not update locally until confirmed.
+        // For responsiveness, local update + broadcast is better.
+        socket.to(socket.roomId).emit("layout_change", {
+            roomId: socket.roomId,
+            payload: {
+                layout: payload.layout // 'default' or 'swapped'
+            }
+        });
+    });
 
-//         // ====================================================================
-//         // SNAPSHOT EVENT - Full canvas state update (e.g., JSON import)
-//         // ====================================================================
-//         else if (type === "snapshot") {
-//             // Store the complete canvas state
-//             room.snapshot = payload; // payload should be { strokes: [...] }
+    // Chat messages
+    socket.on("chat", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
 
-//             // Broadcast to all other users so they update their canvas
-//             broadcast(ws.roomId, JSON.stringify(msg), ws);
-//         }
-//     });
+        socket.chatRate.count++;
+        if (socket.chatRate.count > MAX_CHAT_PER_MINUTE) {
+            socket.emit("error", {
+                message: "Message limit exceeded. Please wait a minute."
+            });
+            return;
+        }
 
-//     /**
-//      * Handle client disconnection
-//      * Remove the client from their room when they disconnect
-//      */
-//     ws.on("close", () => {
-//         if (ws.roomId) {
-//             const room = rooms[ws.roomId];
-//             if (room) {
-//                 // Remove this client from the room's client list
-//                 room.clients = room.clients.filter((c) => c !== ws);
-//             }
-//         }
-//     });
-// });
+        const messageObj = {
+            id: payload.id, // Pass ID from client or generate one
+            user: socket.user,
+            message: payload.message,
+            timestamp: Date.now()
+        };
+        // Ensure ID
+        if (!messageObj.id) messageObj.id = 'msg_' + Date.now() + Math.random().toString(36).substr(2, 5);
 
-// // ============================================================================
-// // HEARTBEAT MECHANISM - Detect and remove dead connections
-// // ============================================================================
+        // save to chat history (keep last 10 only)
+        const room = getRoom(socket.roomId);
+        room.chat.push(messageObj);
+        if (room.chat.length > MAX_CHAT_HISTORY) {
+            room.chat.splice(0, room.chat.length - MAX_CHAT_HISTORY);
+        }
 
-// /**
-//  * Ping all clients every 30 seconds
-//  * If a client doesn't respond (pong), terminate the connection
-//  * This prevents accumulation of zombie connections
-//  */
-// setInterval(() => {
-//     wss.clients.forEach((ws) => {
-//         // If client didn't respond to last ping, terminate
-//         if (!ws.isAlive) return ws.terminate();
+        // broadcast to others (including sender for confirmation)
+        io.to(socket.roomId).emit("chat", {
+            roomId: socket.roomId,
+            payload: messageObj
+        });
+    });
 
-//         // Mark as not alive and send ping
-//         // If they respond with pong, the pong handler will mark them alive
-//         ws.isAlive = false;
-//         ws.ping();
-//     });
-// }, 30000); // Run every 30 seconds
+    // Chat delete - TEACHER ONLY
+    socket.on("chat_delete", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
 
-// // ============================================================================
-// // REST API ENDPOINTS (Optional)
-// // ============================================================================
+        if (!socket.user || !socket.user.isTeacher) {
+            return;
+        }
 
-// /*
-//   These endpoints allow external systems to save/load canvas states
-//   via HTTP instead of WebSocket
-// */
+        const msgId = payload.id;
+        if (!msgId) return;
 
-// /**
-//  * POST /save/:roomId
-//  * Save a canvas snapshot for a specific room
-//  * Body should contain the snapshot data (e.g., { strokes: [...] })
-//  */
-// app.post("/save/:roomId", (req, res) => {
-//     const room = getRoom(req.params.roomId);
-//     room.snapshot = req.body; // Store the snapshot
-//     res.json({ ok: true });
-// });
+        const room = getRoom(roomId);
+        // Remove from history
+        room.chat = room.chat.filter(m => m.id !== msgId);
 
-// /**
-//  * GET /load/:roomId
-//  * Retrieve the saved canvas snapshot for a specific room
-//  * Returns 404 if no snapshot exists
-//  */
-// app.get("/load/:roomId", (req, res) => {
-//     const room = rooms[req.params.roomId];
+        // Broadcast delete
+        io.to(roomId).emit("chat_delete", {
+            roomId,
+            payload: { id: msgId }
+        });
+    });
 
-//     // Check if room and snapshot exist
-//     if (!room || !room.snapshot)
-//         return res.status(404).json({ ok: false, message: "No snapshot" });
+    // Chat clear - TEACHER ONLY
+    socket.on("chat_clear", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
 
-//     // Return the snapshot
-//     res.json({ ok: true, snapshot: room.snapshot });
-// });
+        if (!socket.user || !socket.user.isTeacher) {
+            return;
+        }
 
-// // ============================================================================
-// // START THE SERVER
-// // ============================================================================
+        const room = getRoom(roomId);
+        // Clear history
+        room.chat = [];
 
-// const PORT = 4000;
-// server.listen(PORT, () => console.log("WS Whiteboard Server running on", PORT));
+        console.log(roomId);
 
+        // Broadcast clear
+        io.to(roomId).emit("chat_clear", {
+            roomId,
+            payload: {}
+        });
+    });
+
+    // Backwards-compatible single-message stroke (legacy)
+    socket.on("stroke", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+
+        const stroke = payload?.stroke;
+        if (stroke) {
+            pushStrokeToSnapshot(socket.roomId, stroke);
+            socket.to(socket.roomId).emit("stroke", { roomId: socket.roomId, payload: { stroke } });
+        }
+    });
+
+    // Clear canvas for the room - TEACHER ONLY
+    socket.on("clear", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+
+        // Only teacher can clear
+        if (!socket.user || !socket.user.isTeacher) {
+            return;
+        }
+
+        // reset snapshot
+        rooms[socket.roomId].snapshot = { strokes: [] };
+        // Broadcast to all clients in room including sender
+        io.to(socket.roomId).emit("clear", { roomId: socket.roomId, payload: {} });
+    });
+
+    // Full snapshot (e.g., import JSON)
+    socket.on("snapshot", ({ roomId, payload }) => {
+        if (!socket.roomId) return;
+
+        // payload should be { strokes: [...] }
+        rooms[socket.roomId].snapshot = payload || { strokes: [] };
+        socket.to(socket.roomId).emit("snapshot", { roomId: socket.roomId, payload: rooms[socket.roomId].snapshot });
+    });
+
+    // Handle disconnect
+    socket.on("disconnect", () => {
+        if (socket.chatRate?.timer) clearInterval(socket.chatRate.timer);
+        console.log("Client disconnected:", socket.id);
+
+        if (socket.roomId) {
+            const roomSize = io.sockets.adapter.rooms.get(socket.roomId)?.size || 0;
+            io.to(socket.roomId).emit("room_users", {
+                roomId: socket.roomId,
+                payload: { count: roomSize }
+            });
+        }
+    });
+});
+
+// REST endpoints to save/load snapshots
+app.post("/save/:roomId", (req, res) => {
+    const room = getRoom(req.params.roomId);
+    room.snapshot = req.body || { strokes: [] };
+    res.json({ ok: true });
+});
+
+app.get("/load/:roomId", (req, res) => {
+    const room = rooms[req.params.roomId];
+    if (!room || !room.snapshot) return res.status(404).json({ ok: false, message: "No snapshot" });
+    res.json({ ok: true, snapshot: room.snapshot });
+});
+
+const PORT = process.env.PORT || 4001;
+server.listen(PORT, () => console.log("Socket.IO Whiteboard Server running on", PORT));
