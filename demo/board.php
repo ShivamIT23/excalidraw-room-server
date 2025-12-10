@@ -58,18 +58,31 @@
     </div>
 </div>
 
-<!-- Add Page Button (Top Center/Right) -->
-<div class="absolute top-4 right-2 z-10">
-    <button
-        class="bg-white shadow-md border border-gray-200 hover:bg-gray-50 text-blue-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+<!-- Page Controls (Top Right) -->
+<div class="absolute bottom-2 right-2 z-10 flex items-center gap-2">
+    <button id="prevPageBtn"
+        class="bg-white shadow-md border border-gray-200 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg text-xs font-medium transition-colors">
+        <i class="fa fa-arrow-left" aria-hidden="true"></i>
+    </button>
+    <div id="pageIndicator"
+        class="bg-white shadow-sm border border-gray-200 text-gray-700 px-3 py-2 rounded-lg text-xs font-medium">
+        1
+    </div>
+    <button id="nextPageBtn"
+        class="bg-white shadow-md border border-gray-200 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg text-xs font-medium transition-colors">
+        <i class="fa fa-arrow-right" aria-hidden="true"></i>
+    </button>
+    <button id="addPageBtn" style="display:none;"
+        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-md">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
         </svg>
+        Add
     </button>
 </div>
 
 <!-- Clear & Size Controls (Bottom Left) -->
-<div class="absolute bottom-4 left-4 z-10 flex gap-2">
+<div class="absolute bottom-2 left-2 z-10 flex gap-2">
     <div class="bg-white shadow-lg rounded-lg p-2 flex items-center gap-2 border border-gray-200">
         <label class="text-xs font-medium text-gray-700">Size:</label>
         <input type="range" id="brushSize" min="1" max="40" value="3" class="w-20">
@@ -85,10 +98,9 @@
 </div>
 
 <!-- WebSocket Connection Status -->
-<div class="bg-gray-200 border-t border-gray-200 px-4 py-2">
+<div class="bg-gray-200 absolute top-2 right-2 rounded-[5px] border-t w-fit border-gray-200 px-2 py-1">
     <div class="flex items-center gap-2">
-        <div id="wsStatus" class="w-2 h-2 rounded-full bg-gray-400"></div>
-        <span id="wsStatusText" class="text-xs text-gray-600">Not connected</span>
+        <div id="wsStatus" class="w-4 h-4 animate-pulse rounded-full bg-gray-400"></div>
     </div>
 </div>
 

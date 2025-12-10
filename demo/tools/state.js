@@ -3,7 +3,7 @@ window.BoardState = {
     ctx: null,
     textInput: null,
     canvasContainer: null,
-    
+
     // Tools UI
     tools: {
         pen: null,
@@ -22,13 +22,16 @@ window.BoardState = {
     lastChunkTime: 0,
     isRemoteScrolling: false,
     scrollTimeout: null,
-    
+
     // Config
     roomId: window.ROOM_ID || 'tutoring-room-1',
     userName: window.USER_NAME || 'User-guest',
+    pages: [],
+    currentPageId: null,
+    pageStrokes: {},
 
     // Helper to get mouse/touch position
-    getPos: function(e) {
+    getPos: function (e) {
         const rect = this.canvas.getBoundingClientRect();
         if (e.touches && e.touches[0]) {
             return {
@@ -44,16 +47,16 @@ window.BoardState = {
     },
 
     // Send WebSocket message
-    sendWS: function(obj) {
+    sendWS: function (obj) {
         if (window.WSManager) {
             window.WSManager.send(obj);
         }
     },
 
     // Redraw the canvas
-    redraw: function() {
+    redraw: function () {
         if (!this.ctx || !this.canvas) return;
-        
+
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         for (const s of this.strokes) this.drawStroke(s);
         if (this.drawingStroke) this.drawStroke(this.drawingStroke);
@@ -63,7 +66,7 @@ window.BoardState = {
     },
 
     // Draw a single stroke
-    drawStroke: function(s) {
+    drawStroke: function (s) {
         if (!s) return;
 
         // Handle text strokes
@@ -72,7 +75,7 @@ window.BoardState = {
             this.ctx.font = (s.size || 16) + 'px Arial';
             this.ctx.textBaseline = 'top';
             this.ctx.fillStyle = s.color || '#000';
-            this.ctx.fillText(s.text, s.x, s.y+ s.size);
+            this.ctx.fillText(s.text, s.x, s.y + s.size);
             this.ctx.restore();
             return;
         }
