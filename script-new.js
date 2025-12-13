@@ -20,7 +20,7 @@
     const importFile = document.getElementById("importFile");
 
     // State
-    let ws = null;
+    let socket = null;
 
     let strokes = [];                 // Finalized strokes
     let drawingStroke = null;         // Local stroke being drawn
@@ -124,18 +124,14 @@
         };
 
         // send first chunk + meta
-        sendWS({
-            type: "stroke_chunk",
-            roomId: roomInput.value,
-            payload: {
-                strokeId: drawingStroke.id,
-                point: pt,
-                meta: {
-                    tool: drawingStroke.tool,
-                    color: drawingStroke.color,
-                    size: drawingStroke.size,
-                    user: drawingStroke.user
-                }
+        sendSocketIO("stroke_chunk", {
+            strokeId: drawingStroke.id,
+            point: pt,
+            meta: {
+                tool: drawingStroke.tool,
+                color: drawingStroke.color,
+                size: drawingStroke.size,
+                user: drawingStroke.user
             }
         });
 
@@ -153,18 +149,14 @@
 
         const now = performance.now();
         if (now - lastTime > 25) {
-            sendWS({
-                type: "stroke_chunk",
-                roomId: roomInput.value,
-                payload: {
-                    strokeId: drawingStroke.id,
-                    point: pt,
-                    meta: {
-                        tool: drawingStroke.tool,
-                        color: drawingStroke.color,
-                        size: drawingStroke.size,
-                        user: drawingStroke.user
-                    }
+            sendSocketIO("stroke_chunk", {
+                strokeId: drawingStroke.id,
+                point: pt,
+                meta: {
+                    tool: drawingStroke.tool,
+                    color: drawingStroke.color,
+                    size: drawingStroke.size,
+                    user: drawingStroke.user
                 }
             });
             lastTime = now;
@@ -202,11 +194,7 @@
         strokes.push(drawingStroke);
         undoStack.push({ action: "add", stroke: drawingStroke });
 
-        sendWS({
-            type: "stroke_end",
-            roomId: roomInput.value,
-            payload: { stroke: drawingStroke }
-        });
+        sendSocketIO("stroke_end", { stroke: drawingStroke });
 
         delete remoteLive[drawingStroke.id];
         drawingStroke = null;
@@ -262,11 +250,7 @@
         remoteLive = {};
         redraw();
 
-        sendWS({
-            type: "clear",
-            roomId: roomInput.value,
-            payload: {}
-        });
+        sendSocketIO("clear", {});
     };
 
     undoBtn.onclick = () => {
@@ -299,7 +283,7 @@
 
 
     // =========================================================================================
-    // WEBSOCKET
+    // SOCKET.IO
     // =========================================================================================
 
     function setStatus(t, c = "") {
@@ -307,68 +291,158 @@
         connStatus.style.color = c;
     }
 
-    function sendWS(obj) {
-        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+    function sendSocketIO(eventName, payload) {
+        if (socket && socket.connected) {
+            socket.emit(eventName, {
+                roomId: roomInput.value,
+                payload: payload
+            });
+        }
     }
 
     connectBtn.onclick = () => {
-        let url = prompt("WebSocket URL", "wss://excalidraw-room-server-1.onrender.com");
-        if (!url) return;
+        // Use default URL or get from a config
+        let url = "http://localhost:4000";
+        
+        // Disconnect existing socket if any
+        if (socket) {
+            socket.disconnect();
+        }
 
-        ws = new WebSocket(url);
+        // Create Socket.IO connection
+        socket = io(url, {
+            autoConnect: false,
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: Infinity
+        });
 
-        ws.onopen = () => {
+        // Connection established
+        socket.on("connect", () => {
             setStatus("Connected", "green");
+            console.log("Socket.IO connected:", socket.id);
 
-            sendWS({
-                type: "join",
+            // Join room
+            socket.emit("join", {
                 roomId: roomInput.value,
                 payload: { user: { name: nameInput.value } }
             });
-        };
+        });
 
-        ws.onmessage = ev => {
-            const msg = JSON.parse(ev.data);
-            if (msg.roomId !== roomInput.value) return;
+        // Reconnection events
+        socket.on("reconnect", (attemptNumber) => {
+            setStatus("Reconnected", "green");
+            console.log("Reconnected after", attemptNumber, "attempts");
+            
+            // Rejoin room after reconnection
+            socket.emit("join", {
+                roomId: roomInput.value,
+                payload: { user: { name: nameInput.value } }
+            });
+        });
 
-            if (msg.type === "stroke_chunk") {
-                const { strokeId, point, meta } = msg.payload;
+        socket.on("reconnect_attempt", (attemptNumber) => {
+            setStatus("Reconnecting... (attempt " + attemptNumber + ")", "orange");
+        });
 
-                if (!remoteLive[strokeId]) {
-                    remoteLive[strokeId] = {
-                        id: strokeId,
-                        tool: meta.tool,
-                        color: meta.color,
-                        size: meta.size,
-                        user: meta.user,
-                        points: []
-                    };
-                }
+        socket.on("reconnect_error", (error) => {
+            console.error("Reconnection error:", error);
+        });
 
-                remoteLive[strokeId].points.push(point);
-                redraw();
+        socket.on("reconnect_failed", () => {
+            setStatus("Reconnection failed", "red");
+        });
+
+        // Disconnection
+        socket.on("disconnect", (reason) => {
+            setStatus("Disconnected (" + reason + ")", "red");
+            console.log("Disconnected:", reason);
+        });
+
+        // Connection error
+        socket.on("connect_error", (error) => {
+            setStatus("Connection error", "red");
+            console.error("Connection error:", error);
+        });
+
+        // Receive stroke chunks (live drawing)
+        socket.on("stroke_chunk", ({ roomId, payload }) => {
+            if (roomId !== roomInput.value) return;
+
+            const { strokeId, point, meta } = payload;
+
+            if (!remoteLive[strokeId]) {
+                remoteLive[strokeId] = {
+                    id: strokeId,
+                    tool: meta.tool,
+                    color: meta.color,
+                    size: meta.size,
+                    user: meta.user,
+                    points: []
+                };
             }
 
-            else if (msg.type === "stroke") {
-                strokes.push(msg.payload.stroke);
-                delete remoteLive[msg.payload.stroke.id];
-                redraw();
-            }
+            remoteLive[strokeId].points.push(point);
+            redraw();
+        });
 
-            else if (msg.type === "snapshot") {
-                strokes = msg.payload.strokes;
-                remoteLive = {};
-                redraw();
-            }
+        // Receive finalized stroke
+        socket.on("stroke", ({ roomId, payload }) => {
+            if (roomId !== roomInput.value) return;
 
-            else if (msg.type === "clear") {
-                strokes = [];
-                remoteLive = {};
-                redraw();
-            }
-        };
+            strokes.push(payload.stroke);
+            delete remoteLive[payload.stroke.id];
+            redraw();
+        });
 
-        ws.onclose = () => setStatus("Disconnected", "red");
+        // Receive snapshot (initial state or import)
+        socket.on("snapshot", ({ roomId, payload }) => {
+            if (roomId !== roomInput.value) return;
+
+            strokes = payload.strokes || [];
+            remoteLive = {};
+            redraw();
+        });
+
+        // Receive clear command
+        socket.on("clear", ({ roomId, payload }) => {
+            if (roomId !== roomInput.value) return;
+
+            strokes = [];
+            remoteLive = {};
+            redraw();
+        });
+
+        // Receive chat history
+        socket.on("chat_history", ({ roomId, payload }) => {
+            if (roomId !== roomInput.value) return;
+            console.log("Chat history:", payload);
+            // Handle chat history display if needed
+        });
+
+        // Receive chat message
+        socket.on("chat", ({ roomId, payload }) => {
+            if (roomId !== roomInput.value) return;
+            console.log("Chat message:", payload);
+            // Handle chat message display if needed
+        });
+
+        // Receive typing indicator
+        socket.on("typing", ({ roomId, payload }) => {
+            if (roomId !== roomInput.value) return;
+            console.log("Typing:", payload);
+            // Handle typing indicator if needed
+        });
+
+        // Receive error
+        socket.on("error", ({ message }) => {
+            console.error("Server error:", message);
+            alert(message);
+        });
+
+        // Connect to server
+        socket.connect();
     };
 
 
