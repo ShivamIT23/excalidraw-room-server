@@ -1,18 +1,60 @@
 // Main initialization
 document.addEventListener('DOMContentLoaded', () => {
     const bs = window.BoardState;
+    console.log("Main.js initializing...");
 
-    // Initialize elements
-    bs.canvas = document.getElementById('whiteboardCanvas');
-    bs.ctx = bs.canvas.getContext('2d');
-    bs.textInput = document.getElementById('textInput');
+    // Check Fabric
+    if (typeof fabric === 'undefined') {
+        console.error("Fabric.js is not loaded!");
+        alert("Error: Fabric.js library not loaded. Please checking your internet connection or CDN.");
+        return;
+    }
+
+    // Initialize Fabric
+    const canvasEl = document.getElementById('whiteboardCanvas');
+
+    // Guard: Prevent double initialization
+    if (bs.fabricCanvas || (canvasEl && canvasEl.classList.contains('lower-canvas'))) {
+        console.warn("Fabric canvas already initialized. Skipping.");
+        return;
+    }
+
+    // Fixed virtual canvas dimensions - NEVER change these
+    const VIRTUAL_WIDTH = 2000;
+    const VIRTUAL_HEIGHT = 3000;
+
+    // Set initial dimensions on canvas element
+    canvasEl.width = VIRTUAL_WIDTH;
+    canvasEl.height = VIRTUAL_HEIGHT;
+
+    // Initialize Fabric Canvas with fixed virtual size
+    bs.fabricCanvas = new fabric.Canvas('whiteboardCanvas', {
+        isDrawingMode: true,
+        width: VIRTUAL_WIDTH,
+        height: VIRTUAL_HEIGHT,
+        backgroundColor: bs.backgroundColor || '#000000'
+    });
+    console.log("Fabric canvas initialized", bs.fabricCanvas);
+
+    const canvas = bs.fabricCanvas;
+    // Set brush
+    canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
+    canvas.freeDrawingBrush.width = 5;
+    canvas.freeDrawingBrush.color = '#ffffff';
+
+    // Elements
     bs.canvasContainer = document.getElementById('canvasContainer');
-
     bs.tools.pen = document.getElementById('penTool');
     bs.tools.text = document.getElementById('textTool');
     bs.tools.eraser = document.getElementById('eraserTool');
+    bs.tools.hand = document.getElementById('handTool');
+    bs.tools.arrow = document.getElementById('arrowTool');
     bs.tools.colorPicker = document.getElementById('colorPicker');
     bs.tools.brushSize = document.getElementById('brushSize');
+
+    // Store virtual dimensions
+    bs.virtualWidth = VIRTUAL_WIDTH;
+    bs.virtualHeight = VIRTUAL_HEIGHT;
 
     const sizeValue = document.getElementById('sizeValue');
     const clearCanvasBtn = document.getElementById('clearCanvas');
@@ -21,14 +63,207 @@ document.addEventListener('DOMContentLoaded', () => {
     const prevPageBtn = document.getElementById('prevPageBtn');
     const nextPageBtn = document.getElementById('nextPageBtn');
     const pageIndicator = document.getElementById('pageIndicator');
+    const backgroundPicker = document.getElementById('backgroundPicker');
+    const sizeSelector = document.getElementById('sizeSelector');
+    bs.textInput = document.getElementById('textInput');
 
-    function cloneStrokes(strokes = []) {
-        return JSON.parse(JSON.stringify(strokes));
+    // Viewport Scaling Logic
+    function updateViewportScale() {
+        if (!bs.canvasContainer || !canvas) return;
+
+        const containerWidth = bs.canvasContainer.clientWidth;
+        const containerHeight = bs.canvasContainer.clientHeight;
+
+        if (containerWidth === 0 || containerHeight === 0) {
+            // Retry after a short delay if container not ready
+            setTimeout(updateViewportScale, 50);
+            return;
+        }
+
+        // Calculate scale to fit container
+        const scaleX = containerWidth / VIRTUAL_WIDTH;
+        const scaleY = containerHeight / VIRTUAL_HEIGHT;
+        const scale = Math.min(scaleX, scaleY);
+
+        // Get current viewport transform
+        const currentTransform = canvas.viewportTransform || [1, 0, 0, 1, 0, 0];
+
+        // On initial load or if scale changed significantly, center the canvas
+        const currentScale = currentTransform[0];
+        const isInitialLoad = currentScale === 1 && currentTransform[4] === 0 && currentTransform[5] === 0;
+
+        if (isInitialLoad || Math.abs(currentScale - scale) > 0.01) {
+            // Center the canvas in the container
+            const scaledWidth = VIRTUAL_WIDTH * scale;
+            const scaledHeight = VIRTUAL_HEIGHT * scale;
+            const offsetX = (containerWidth - scaledWidth) / 2;
+            const offsetY = (containerHeight - scaledHeight) / 2;
+
+            const newTransform = [
+                scale, 0,
+                0, scale,
+                offsetX,
+                offsetY
+            ];
+
+            canvas.setViewportTransform(newTransform);
+            canvas.renderAll();
+
+            // Broadcast if teacher
+            if (window.IS_TEACHER) {
+                debouncedBroadcastViewport();
+            }
+        } else {
+            // Preserve translation (panning) but update scale
+            const newTransform = [
+                scale, 0,
+                0, scale,
+                currentTransform[4], // Preserve X translation
+                currentTransform[5]   // Preserve Y translation
+            ];
+
+            canvas.setViewportTransform(newTransform);
+            canvas.renderAll();
+        }
     }
+
+    // Panning state for hand tool
+    bs.isPanning = false;
+    bs.lastPanPoint = null;
+
+    // Panning handler
+    function handlePan(e) {
+        if (!bs.isPanning || !window.IS_TEACHER) return;
+
+        const pointer = canvas.getPointer(e);
+        if (!bs.lastPanPoint) {
+            bs.lastPanPoint = pointer;
+            return;
+        }
+
+        const currentTransform = canvas.viewportTransform || [1, 0, 0, 1, 0, 0];
+
+        // Calculate delta in screen coordinates
+        const deltaX = pointer.x - bs.lastPanPoint.x;
+        const deltaY = pointer.y - bs.lastPanPoint.y;
+
+        // Apply delta directly to viewport transform translation
+        const newTransform = [
+            currentTransform[0], currentTransform[1],
+            currentTransform[2], currentTransform[3],
+            currentTransform[4] + deltaX,
+            currentTransform[5] + deltaY
+        ];
+
+        canvas.setViewportTransform(newTransform);
+        canvas.renderAll();
+
+        bs.lastPanPoint = pointer;
+
+        // Debounced broadcast viewport change
+        debouncedBroadcastViewport();
+    }
+
+    // Broadcast viewport transform to students
+    function broadcastViewportTransform() {
+        if (!window.IS_TEACHER) return;
+
+        const transform = canvas.viewportTransform || [1, 0, 0, 1, 0, 0];
+        bs.sendWS({
+            type: 'viewport_transform',
+            roomId: bs.roomId,
+            payload: {
+                viewportTransform: transform,
+                pageId: bs.currentPageId
+            }
+        });
+    }
+
+    // Debounce viewport broadcast
+    let viewportBroadcastTimeout = null;
+    function debouncedBroadcastViewport() {
+        clearTimeout(viewportBroadcastTimeout);
+        viewportBroadcastTimeout = setTimeout(() => {
+            broadcastViewportTransform();
+        }, 100);
+    }
+
+    // Initialize viewport on load (with delay to ensure container is sized)
+    setTimeout(() => {
+        updateViewportScale();
+    }, 100);
+
+    // Update viewport on window resize
+    let resizeTimeout = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            updateViewportScale();
+        }, 100);
+    });
+
+    // Also update when container size changes (for dynamic layouts)
+    if (bs.canvasContainer && window.ResizeObserver) {
+        const resizeObserver = new ResizeObserver(() => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                updateViewportScale();
+            }, 100);
+        });
+        resizeObserver.observe(bs.canvasContainer);
+    }
+
+    // Panning event listeners
+    canvas.on('mouse:down', (e) => {
+        if (bs.currentTool === 'hand' && window.IS_TEACHER && !e.target) {
+            // Only start panning if not clicking on an object
+            bs.isPanning = true;
+            bs.lastPanPoint = canvas.getPointer(e.e);
+            canvas.defaultCursor = 'grabbing';
+            canvas.selection = false;
+        }
+    });
+
+    canvas.on('mouse:move', (e) => {
+        if (bs.isPanning && bs.currentTool === 'hand' && window.IS_TEACHER) {
+            e.e.preventDefault();
+            handlePan(e.e);
+        }
+    });
+
+    canvas.on('mouse:up', () => {
+        if (bs.isPanning) {
+            bs.isPanning = false;
+            bs.lastPanPoint = null;
+            if (bs.currentTool === 'hand') {
+                canvas.defaultCursor = 'grab';
+            }
+            debouncedBroadcastViewport();
+        }
+    });
+
+    // Handle mouse leave during panning
+    canvas.on('mouse:out', () => {
+        if (bs.isPanning) {
+            bs.isPanning = false;
+            bs.lastPanPoint = null;
+            if (bs.currentTool === 'hand') {
+                canvas.defaultCursor = 'grab';
+            }
+            debouncedBroadcastViewport();
+        }
+    });
+
+    // --- State Management ---
 
     function persistCurrentPage() {
         if (!bs.currentPageId) return;
-        bs.pageStrokes[bs.currentPageId] = cloneStrokes(bs.strokes);
+        const json = canvas.toJSON();
+        // Explicitly save background color if not in JSON (Fabric usually includes it)
+        if (canvas.backgroundColor) {
+            json.background = canvas.backgroundColor;
+        }
+        bs.pageStrokes[bs.currentPageId] = json;
     }
 
     function updatePageIndicator() {
@@ -43,15 +278,31 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!pageId) return;
         persistCurrentPage();
         bs.currentPageId = pageId;
+
         const cached = bs.pageStrokes[pageId];
-        bs.strokes = cached ? cloneStrokes(cached) : [];
-        bs.remoteLive = {};
-        bs.redraw();
+        canvas.clear();
+        canvas.setBackgroundColor('#000000', canvas.renderAll.bind(canvas)); // Reset bg
+
+        if (cached) {
+            canvas.loadFromJSON(cached, () => {
+                canvas.renderAll();
+                const bg = cached.background || cached.backgroundColor || '#000000';
+                canvas.setBackgroundColor(bg, canvas.renderAll.bind(canvas));
+                if (backgroundPicker) backgroundPicker.value = (typeof bg === 'string') ? bg : '#000000';
+            });
+        }
         updatePageIndicator();
     }
 
-    function applySnapshot(pageId, strokes = []) {
-        bs.pageStrokes[pageId] = cloneStrokes(strokes);
+    function applySnapshot(pageId, snapshotData, backgroundColor) {
+        bs.pageStrokes[pageId] = snapshotData;
+
+        // If snapshot has background, store it
+        if (backgroundColor) {
+            if (!bs.pageStrokes[pageId]) bs.pageStrokes[pageId] = { objects: [] }; // Safety
+            bs.pageStrokes[pageId].background = backgroundColor;
+        }
+
         if (!bs.currentPageId || bs.currentPageId === pageId) {
             setCurrentPage(pageId);
         }
@@ -74,156 +325,155 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Drawing Logic
-    function beginStroke(point) {
-        bs.drawingStroke = {
+    // --- Event Listeners : Local Drawing ---
+
+    canvas.on('path:created', (e) => {
+        const path = e.path;
+        path.set({
             id: 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-            tool: bs.currentTool,
-            color: bs.tools.colorPicker.value,
-            size: Number(bs.tools.brushSize.value),
-            points: [point],
-            user: { name: bs.userName }
-        };
+            perPixelTargetFind: true
+        });
 
         bs.sendWS({
-            type: 'stroke_chunk',
+            type: 'stroke',
             roomId: bs.roomId,
             payload: {
                 pageId: bs.currentPageId,
-                strokeId: bs.drawingStroke.id,
-                point: point,
-                meta: {
-                    tool: bs.drawingStroke.tool,
-                    color: bs.drawingStroke.color,
-                    size: bs.drawingStroke.size,
-                    user: bs.drawingStroke.user
-                }
+                stroke: path.toObject(['id'])
             }
         });
-
-        bs.redraw();
-    }
-
-    function extendStroke(point) {
-        if (!bs.drawingStroke) return;
-        bs.drawingStroke.points.push(point);
-
-        const now = performance.now();
-        if (now - bs.lastChunkTime > 25) {
-            bs.sendWS({
-                type: 'stroke_chunk',
-                roomId: bs.roomId,
-                payload: {
-                    pageId: bs.currentPageId,
-                    strokeId: bs.drawingStroke.id,
-                    point: point,
-                    meta: {
-                        tool: bs.drawingStroke.tool,
-                        color: bs.drawingStroke.color,
-                        size: bs.drawingStroke.size,
-                        user: bs.drawingStroke.user
-                    }
-                }
-            });
-            bs.lastChunkTime = now;
-        }
-
-        // Local instant draw
-        const pts = bs.drawingStroke.points;
-        if (pts.length > 1) {
-            const a = pts[pts.length - 2];
-            const b = pts[pts.length - 1];
-            bs.ctx.save();
-            if (bs.drawingStroke.tool === 'eraser') {
-                bs.ctx.globalCompositeOperation = 'destination-out';
-            } else {
-                bs.ctx.globalCompositeOperation = 'source-over';
-            }
-            bs.ctx.strokeStyle = bs.drawingStroke.color;
-            bs.ctx.lineWidth = bs.drawingStroke.size;
-            bs.ctx.lineCap = 'round';
-            bs.ctx.lineJoin = 'round';
-            bs.ctx.beginPath();
-            bs.ctx.moveTo(a.x, a.y);
-            bs.ctx.lineTo(b.x, b.y);
-            bs.ctx.stroke();
-            bs.ctx.restore();
-        }
-    }
-
-    function endStroke() {
-        if (!bs.drawingStroke) return;
-        bs.strokes.push(bs.drawingStroke);
-
-        bs.sendWS({
-            type: 'stroke_end',
-            roomId: bs.roomId,
-            payload: {
-                pageId: bs.currentPageId,
-                stroke: bs.drawingStroke
-            }
-        });
-
-        delete bs.remoteLive[bs.drawingStroke.id];
-        bs.drawingStroke = null;
         persistCurrentPage();
-        bs.redraw();
-    }
-
-    // Input Events
-    let isPointerDown = false;
-
-    function onPointerDown(e) {
-        const pos = bs.getPos(e);
-        if (bs.currentTool === 'text') {
-            bs.showTextInput(pos);
-        } else {
-            isPointerDown = true;
-            beginStroke(pos);
-        }
-        e.preventDefault();
-    }
-
-    function onPointerMove(e) {
-        if (!isPointerDown || bs.currentTool === 'text') return;
-        const pos = bs.getPos(e);
-        extendStroke(pos);
-        e.preventDefault();
-    }
-
-    function onPointerUp(e) {
-        if (!isPointerDown) return;
-        isPointerDown = false;
-        endStroke();
-        e.preventDefault();
-    }
-
-    // Listeners
-    bs.tools.pen && bs.tools.pen.addEventListener('click', () => bs.selectPen());
-    bs.tools.text && bs.tools.text.addEventListener('click', () => bs.selectText());
-    bs.tools.eraser && bs.tools.eraser.addEventListener('click', () => bs.selectEraser());
-
-    bs.tools.brushSize && bs.tools.brushSize.addEventListener('input', (e) => {
-        if (sizeValue) sizeValue.textContent = e.target.value;
     });
 
-    clearCanvasBtn && clearCanvasBtn.addEventListener('click', () => bs.clearCanvas());
+    canvas.on('object:modified', (e) => {
+        const obj = e.target;
+        if (!obj) return;
 
+        bs.sendWS({
+            type: 'object_modified',
+            roomId: bs.roomId,
+            payload: {
+                pageId: bs.currentPageId,
+                object: obj.toObject(['id'])
+            }
+        });
+        persistCurrentPage();
+    });
+
+    canvas.on('object:added', (e) => {
+        const obj = e.target;
+        if (obj.is_remote) return;
+        if (obj.type === 'path') return;
+
+        if (!obj.id) obj.set('id', 'o_' + Date.now());
+
+        bs.sendWS({
+            type: 'stroke',
+            roomId: bs.roomId,
+            payload: {
+                pageId: bs.currentPageId,
+                stroke: obj.toObject(['id'])
+            }
+        });
+        persistCurrentPage();
+    });
+
+    // --- Tools Setup ---
+
+    // Color
+    if (bs.tools.colorPicker) {
+        bs.tools.colorPicker.addEventListener('input', (e) => {
+            const color = e.target.value;
+            canvas.freeDrawingBrush.color = color;
+            const activeObj = canvas.getActiveObject();
+            if (activeObj) {
+                if (activeObj.type === 'i-text' || activeObj.type === 'text') {
+                    activeObj.set('fill', color);
+                } else {
+                    activeObj.set('stroke', color);
+                }
+                canvas.requestRenderAll();
+                canvas.fire('object:modified', { target: activeObj });
+            }
+        });
+    }
+
+    // Brush Size
+    if (bs.tools.brushSize) {
+        bs.tools.brushSize.addEventListener('input', (e) => {
+            const size = parseInt(e.target.value, 10);
+            if (sizeValue) sizeValue.textContent = size;
+            canvas.freeDrawingBrush.width = size;
+        });
+    }
+
+    // Background Color
+    if (backgroundPicker) {
+        backgroundPicker.addEventListener('input', (e) => {
+            const color = e.target.value;
+            bs.backgroundColor = color; // Update global state
+            canvas.setBackgroundColor(color, canvas.renderAll.bind(canvas));
+
+            // If Eraser is active and using fallback (PencilBrush), update its color
+            if (bs.currentTool === 'eraser' && !fabric.EraserBrush && canvas.freeDrawingBrush) {
+                canvas.freeDrawingBrush.color = color;
+            }
+
+            bs.sendWS({
+                type: 'background_change',
+                roomId: bs.roomId,
+                payload: {
+                    backgroundColor: color,
+                    pageId: bs.currentPageId
+                }
+            });
+            persistCurrentPage();
+        });
+    }
+
+    // Clear
+    if (clearCanvasBtn) {
+        clearCanvasBtn.addEventListener('click', () => {
+            canvas.clear();
+            canvas.setBackgroundColor('#000000', canvas.renderAll.bind(canvas));
+            bs.sendWS({
+                type: 'clear',
+                roomId: bs.roomId,
+                payload: { pageId: bs.currentPageId }
+            });
+            persistCurrentPage();
+        });
+    }
+
+    // Size Selector
+    if (sizeSelector) {
+        const sizeOptions = sizeSelector.querySelectorAll('.size-option');
+        sizeOptions.forEach((option) => {
+            option.addEventListener('click', () => {
+                const size = parseInt(option.getAttribute('data-size'), 10);
+                if (size && bs.tools.brushSize) {
+                    bs.tools.brushSize.value = size;
+                    canvas.freeDrawingBrush.width = size;
+                    sizeOptions.forEach(opt => opt.classList.remove('opacity-100'));
+                    sizeOptions.forEach(opt => opt.classList.add('opacity-70'));
+                    option.classList.remove('opacity-70');
+                    option.classList.add('opacity-100');
+                }
+            });
+        });
+    }
+
+    // --- UI Helpers ---
     if (addPageBtn) {
         if (window.IS_TEACHER) {
             addPageBtn.style.display = 'flex';
             addPageBtn.addEventListener('click', () => {
-                bs.sendWS({
-                    type: 'page_add',
-                    roomId: bs.roomId,
-                    payload: {}
-                });
+                bs.sendWS({ type: 'page_add', roomId: bs.roomId, payload: {} });
             });
         } else {
             addPageBtn.style.display = 'none';
         }
     }
-
     if (prevPageBtn) {
         if (!window.IS_TEACHER) {
             prevPageBtn.disabled = true;
@@ -232,7 +482,6 @@ document.addEventListener('DOMContentLoaded', () => {
             prevPageBtn.addEventListener('click', () => movePage(-1));
         }
     }
-
     if (nextPageBtn) {
         if (!window.IS_TEACHER) {
             nextPageBtn.disabled = true;
@@ -242,61 +491,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    bs.textInput && bs.textInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') bs.addText();
-        if (e.key === 'Escape') bs.textInput.classList.add('hidden');
-    });
+    // Remove old scroll-based viewport sync (we use viewportTransform now)
 
-    bs.textInput && bs.textInput.addEventListener('blur', () => {
-        setTimeout(() => bs.addText(), 100);
-    });
-
-    // Canvas Events
-    if (bs.canvas) {
-        bs.canvas.addEventListener('mousedown', onPointerDown);
-        bs.canvas.addEventListener('mousemove', onPointerMove);
-        bs.canvas.addEventListener('mouseup', onPointerUp);
-        bs.canvas.addEventListener('mouseleave', onPointerUp);
-        bs.canvas.addEventListener('touchstart', onPointerDown, { passive: false });
-        bs.canvas.addEventListener('touchmove', onPointerMove, { passive: false });
-        bs.canvas.addEventListener('touchend', onPointerUp);
-    }
-
-    // Resize
-    function resizeCanvas() {
-        if (!bs.canvas) return;
-        const dpr = window.devicePixelRatio || 1;
-        bs.canvas.width = 2000 * dpr;
-        bs.canvas.height = 3000 * dpr;
-        bs.canvas.style.width = '2000px';
-        bs.canvas.style.height = '3000px';
-        bs.ctx.scale(dpr, dpr);
-        bs.redraw();
-    }
-    window.addEventListener('resize', () => {
-        clearTimeout(window._wb_resize_timeout);
-        window._wb_resize_timeout = setTimeout(resizeCanvas, 120);
-    });
-
-    // Scroll
-    if (bs.canvasContainer) {
-        bs.canvasContainer.addEventListener('scroll', () => {
-            if (bs.isRemoteScrolling) return;
-            clearTimeout(bs.scrollTimeout);
-            bs.scrollTimeout = setTimeout(() => {
-                bs.sendWS({
-                    type: 'viewport_change',
-                    roomId: bs.roomId,
-                    payload: {
-                        scrollTop: bs.canvasContainer.scrollTop,
-                        scrollLeft: bs.canvasContainer.scrollLeft
-                    }
-                });
-            }, 50);
-        });
-    }
-
-    // WebSocket Handling
+    // --- WebSocket Handling ---
     if (!window._boardHandlersRegistered && window.WSManager) {
         window._boardHandlersRegistered = true;
 
@@ -306,6 +503,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (msg.type === 'page_state') {
                 bs.pages = msg.payload?.pages || [];
                 if (msg.payload?.currentPageId) {
+                    // If we switched page, setCurrentPage handles valid persisted data
+                    // But if it's a join, we might wait for snapshot
                     setCurrentPage(msg.payload.currentPageId);
                 }
                 updatePageIndicator();
@@ -314,52 +513,87 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (msg.type === 'snapshot') {
                 const targetPageId = msg.payload?.pageId || bs.currentPageId || 'page-1';
-                applySnapshot(targetPageId, msg.payload?.strokes || []);
+                // msg.payload.strokes is strictly strokes array if from server standard
+                // But server sends { objects: [...] } structure?
+                // Server code sends `strokes: page.strokes`.
+                // Fabric loadFromJSON expects { objects: [], background: ... } usually.
+                // We need to wrap it if it's just an array of objects.
+
+                let dataToStore = {};
+                if (Array.isArray(msg.payload.strokes)) {
+                    dataToStore = { objects: msg.payload.strokes };
+                } else {
+                    dataToStore = msg.payload.strokes || { objects: [] };
+                }
+
+                applySnapshot(targetPageId, dataToStore, msg.payload.backgroundColor);
                 return;
             }
 
             const targetPageId = msg.payload?.pageId || bs.currentPageId;
             if (targetPageId && bs.currentPageId && targetPageId !== bs.currentPageId) {
-                // Ignore events for other pages; snapshot will sync when switched
                 return;
             }
 
-            if (msg.type === 'stroke_chunk') {
-                const { strokeId, point, meta } = msg.payload;
-                if (!bs.remoteLive[strokeId]) {
-                    bs.remoteLive[strokeId] = {
-                        id: strokeId,
-                        tool: meta.tool,
-                        color: meta.color,
-                        size: meta.size,
-                        user: meta.user,
-                        points: []
-                    };
+            if (msg.type === 'stroke') {
+                const objData = msg.payload.stroke;
+                if (!objData) return;
+
+                fabric.util.enlivenObjects([objData], (enlivened) => {
+                    enlivened.forEach((obj) => {
+                        obj.is_remote = true;
+                        const exists = canvas.getObjects().find(o => o.id === obj.id);
+                        if (!exists) {
+                            canvas.add(obj);
+                            canvas.requestRenderAll();
+                        }
+                    });
+                });
+                persistCurrentPage();
+
+            } else if (msg.type === 'background_change') {
+                // Check if it's for current page or we need to update storage
+                const pId = msg.payload.pageId || bs.currentPageId;
+                if (pId === bs.currentPageId) {
+                    if (msg.payload.backgroundColor) {
+                        const newBg = msg.payload.backgroundColor;
+                        bs.backgroundColor = newBg;
+                        canvas.setBackgroundColor(newBg, canvas.renderAll.bind(canvas));
+                        if (backgroundPicker) backgroundPicker.value = newBg;
+
+                        // Update eraser if active
+                        if (bs.currentTool === 'eraser' && !fabric.EraserBrush && canvas.freeDrawingBrush) {
+                            canvas.freeDrawingBrush.color = newBg;
+                        }
+                    }
                 }
-                bs.remoteLive[strokeId].points.push(point);
-                bs.redraw();
-            } else if (msg.type === 'stroke_end') {
-                const stroke = msg.payload.stroke;
-                bs.strokes.push(stroke);
-                delete bs.remoteLive[stroke.id];
+                // Store it
+                if (bs.pageStrokes[pId]) {
+                    bs.pageStrokes[pId].background = msg.payload.backgroundColor;
+                }
                 persistCurrentPage();
-                bs.redraw();
-            } else if (msg.type === 'stroke' && msg.payload?.stroke) {
-                bs.strokes.push(msg.payload.stroke);
-                persistCurrentPage();
-                bs.redraw();
+
             } else if (msg.type === 'clear') {
-                bs.strokes = [];
-                bs.remoteLive = {};
+                canvas.clear();
+                canvas.setBackgroundColor('#000000', canvas.renderAll.bind(canvas));
                 persistCurrentPage();
-                bs.redraw();
-            } else if (msg.type === 'snapshot') {
-            } else if (msg.type === 'viewport_change') {
-                if (bs.canvasContainer) {
-                    bs.isRemoteScrolling = true;
-                    bs.canvasContainer.scrollTop = msg.payload.scrollTop;
-                    bs.canvasContainer.scrollLeft = msg.payload.scrollLeft;
-                    setTimeout(() => { bs.isRemoteScrolling = false; }, 50);
+            } else if (msg.type === 'viewport_transform') {
+                // Students receive and apply teacher's viewport transform
+                if (!window.IS_TEACHER && msg.payload.viewportTransform) {
+                    const transform = msg.payload.viewportTransform;
+                    canvas.setViewportTransform(transform);
+                    canvas.renderAll();
+                }
+            } else if (msg.type === 'object_modified') {
+                const objData = msg.payload.object;
+                if (objData && objData.id) {
+                    const exists = canvas.getObjects().find(o => o.id === objData.id);
+                    if (exists) {
+                        exists.set(objData);
+                        exists.setCoords();
+                        canvas.requestRenderAll();
+                        persistCurrentPage();
+                    }
                 }
             }
         });
@@ -370,27 +604,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 wsStatus.classList.add('bg-green-500');
             }
         });
-
         window.WSManager.on('close', () => {
             if (wsStatus) {
                 wsStatus.classList.remove('bg-green-500');
                 wsStatus.classList.add('bg-gray-400');
             }
         });
-
-        window.WSManager.on('error', () => {
-            if (wsStatus) {
-                wsStatus.classList.remove('bg-green-500', 'bg-gray-400');
-                wsStatus.classList.add('bg-red-500');
-            }
-        });
     }
 
-    // Init call
-    setTimeout(() => {
-        resizeCanvas();
-        if (!window.IS_TEACHER && clearCanvasBtn) {
-            clearCanvasBtn.style.display = 'none';
-        }
-    }, 100);
+    // Listeners for Tools
+    bs.tools.pen && bs.tools.pen.addEventListener('click', () => bs.selectPen());
+    bs.tools.text && bs.tools.text.addEventListener('click', () => bs.selectText());
+    bs.tools.eraser && bs.tools.eraser.addEventListener('click', () => bs.selectEraser());
+    bs.tools.hand && bs.tools.hand.addEventListener('click', () => bs.selectHand());
+    bs.tools.arrow && bs.tools.arrow.addEventListener('click', () => bs.selectArrow());
+
+    // Select Arrow by default (handles UI reset)
+    if (bs.selectArrow) {
+        bs.selectArrow();
+    }
 });
