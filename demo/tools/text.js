@@ -1,41 +1,73 @@
-window.BoardState.selectText = function() {
+window.BoardState.selectText = function () {
     window.BoardState.currentTool = 'text';
     const { pen, text, eraser } = window.BoardState.tools;
+    const canvas = window.BoardState.fabricCanvas;
+
+    if (canvas) {
+        canvas.isDrawingMode = false;
+        canvas.selection = false;
+        canvas.defaultCursor = 'text';
+
+        // Logic to add text on click is handled by a listener or we add it here?
+        // Let's add a robust listener that checks tool state.
+        // We'll attach it once to the canvas if not present, but better to just use a global handler in main.js? 
+        // Or attach here.
+
+        if (!canvas._hasTextListener) {
+            canvas._hasTextListener = true;
+            canvas.on('mouse:down', function (options) {
+                if (window.BoardState.currentTool !== 'text') return;
+                if (options.target) return; // clicked on existing object
+
+                const pointer = canvas.getPointer(options.e);
+                const iText = new fabric.IText('Type here', {
+                    left: pointer.x,
+                    top: pointer.y,
+                    fontFamily: 'Arial',
+                    fill: document.getElementById('colorPicker')?.value || '#ffffff',
+                    fontSize: 20
+                });
+
+                canvas.add(iText);
+                canvas.setActiveObject(iText);
+                iText.enterEditing();
+                iText.selectAll();
+
+                // Switch back to pen automatically? Or stay in text mode? Use stay in mode.
+                // window.BoardState.selectPen(); 
+            });
+        }
+    }
 
     // Update UI
+    // Update UI
+    if (window.BoardState.resetToolStyles) window.BoardState.resetToolStyles();
+
     if (text) {
-        text.classList.add('active', 'bg-blue-600', 'text-white');
-        text.classList.remove('bg-white', 'border', 'border-gray-300', 'text-gray-700');
-    }
-    if (pen) {
-        pen.classList.remove('active', 'bg-blue-600', 'text-white');
-        pen.classList.add('bg-white', 'border', 'border-gray-300', 'text-gray-700');
-    }
-    if (eraser) {
-        eraser.classList.remove('active', 'bg-blue-600', 'text-white');
-        eraser.classList.add('bg-white', 'border', 'border-gray-300', 'text-gray-700');
+        text.classList.add('active', 'bg-gray-500', 'text-white');
+        text.classList.remove('bg-transparent', 'text-black');
     }
 };
 
-window.BoardState.showTextInput = function(point) {
+window.BoardState.showTextInput = function (point) {
     const textInput = this.textInput;
     const colorPicker = this.tools.colorPicker;
     const brushSize = this.tools.brushSize;
 
     if (!textInput) return;
 
+    // Enforce minimum font size of 12px
+    const size = (this.tools.brushSize ? Number(this.tools.brushSize.value) : 3) * 4;
     textInput.style.left = point.x + 'px';
     textInput.style.top = point.y + 'px';
-    textInput.style.color = colorPicker ? colorPicker.value : '#000000';
-    // Enforce minimum font size of 12px
-    const size = Math.max(12, brushSize ? Number(brushSize.value) : 16);
+    textInput.style.color = colorPicker ? colorPicker.value : '#ffffff';
     textInput.style.fontSize = size + 'px';
     textInput.classList.remove('hidden');
     textInput.value = '';
     textInput.focus();
 };
 
-window.BoardState.addText = function() {
+window.BoardState.addText = function () {
     const textInput = this.textInput;
     if (!textInput) return;
 
@@ -46,12 +78,12 @@ window.BoardState.addText = function() {
     }
 
     // Enforce minimum font size of 12px
-    const size = Math.max(12, this.tools.brushSize ? Number(this.tools.brushSize.value) : 16);
-    const color = this.tools.colorPicker ? this.tools.colorPicker.value : '#000000';
+    const size = (this.tools.brushSize ? Number(this.tools.brushSize.value) : 3) * 4;
+    const color = this.tools.colorPicker ? this.tools.colorPicker.value : '#ffffff';
 
-    // Adjust for border (2px) + padding (px-2=8px, py-1=4px) + line-height correction
-    const x = parseInt(textInput.style.left) + 11; // increased X slightly too
-    const y = parseInt(textInput.style.top) + 6 + (size * 0.30);
+    // Use the exact position from the input (no adjustments)
+    const x = parseInt(textInput.style.left) + ((40 - size) * 0.3) + 5;
+    const y = parseInt(textInput.style.top) - ((40 - size) * 0.3) + 20;
 
     this.ctx.save();
     this.ctx.font = size + 'px Arial';

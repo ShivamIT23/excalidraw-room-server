@@ -1,4 +1,12 @@
 <?php
+session_start();
+echo "<script>
+
+</script>"
+?>
+
+
+<?php
 /**
  * COLLABORATIVE WHITEBOARD - PHP ENTRY POINT
  * 

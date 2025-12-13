@@ -1,22 +1,23 @@
-// Pen tool specific logic could go here
-// Currently, the drawing logic is generic in BoardState.drawStroke
-// and event listeners are in main.js.
-
-window.BoardState.selectPen = function() {
+window.BoardState.selectPen = function () {
     window.BoardState.currentTool = 'pen';
-    const { pen, text, eraser } = window.BoardState.tools;
-    
+    const { pen, text, eraser, hand, arrow } = window.BoardState.tools;
+    const canvas = window.BoardState.fabricCanvas;
+
+    if (canvas) {
+        canvas.isDrawingMode = true;
+        canvas.selection = false;
+        canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
+        const brushSizeInput = document.getElementById('brushSize');
+        canvas.freeDrawingBrush.width = parseInt(brushSizeInput?.value || 5);
+        canvas.freeDrawingBrush.color = document.getElementById('colorPicker')?.value || '#ffffff';
+        canvas.defaultCursor = 'crosshair';
+    }
+
     // Update UI
+    if (window.BoardState.resetToolStyles) window.BoardState.resetToolStyles();
+
     if (pen) {
-        pen.classList.add('active', 'bg-blue-600', 'text-white');
-        pen.classList.remove('bg-white', 'border', 'border-gray-300', 'text-gray-700');
-    }
-    if (text) {
-        text.classList.remove('active', 'bg-blue-600', 'text-white');
-        text.classList.add('bg-white', 'border', 'border-gray-300', 'text-gray-700');
-    }
-    if (eraser) {
-        eraser.classList.remove('active', 'bg-blue-600', 'text-white');
-        eraser.classList.add('bg-white', 'border', 'border-gray-300', 'text-gray-700');
+        pen.classList.add('active', 'bg-gray-500', 'text-white');
+        pen.classList.remove('bg-transparent', 'text-black');
     }
 };
