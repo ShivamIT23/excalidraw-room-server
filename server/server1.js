@@ -3,13 +3,7 @@ import http from "http";
 import cors from "cors";
 import bodyParser from "body-parser";
 import { Server } from "socket.io";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 
-// Get __dirname in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
