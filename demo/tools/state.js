@@ -6,11 +6,23 @@ window.BoardState = {
         pen: null,
         text: null,
         eraser: null,
-        hand: null,
         arrow: null,
+        outlineShape: null,
+        filledShape: null,
+        symbol: null,
+        undo: null,
+        redo: null,
+        document: null,
+        clearPage: null,
         colorPicker: null,
         brushSize: null
     },
+
+    // Shape state
+    shapeType: 'circle', // 'circle' or 'square'
+    shapeFilled: false,
+    isDrawingShape: false,
+    shapeStartPoint: null,
 
     // State
     currentTool: 'pen',
@@ -45,7 +57,7 @@ window.BoardState = {
     // Helper to reset tool button styles
     resetToolStyles: function () {
         const tools = this.tools;
-        ['pen', 'text', 'eraser', 'hand', 'arrow'].forEach(toolName => {
+        ['pen', 'text', 'eraser', 'arrow'].forEach(toolName => {
             const btn = tools[toolName];
             if (btn) {
                 btn.classList.remove('active', 'bg-gray-500', 'text-white');

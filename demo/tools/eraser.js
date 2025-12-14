@@ -1,6 +1,6 @@
 window.BoardState.selectEraser = function () {
     window.BoardState.currentTool = 'eraser';
-    const { pen, text, eraser, hand, arrow } = window.BoardState.tools;
+    const { pen, text, eraser, arrow } = window.BoardState.tools;
     const canvas = window.BoardState.fabricCanvas;
 
     if (canvas) {

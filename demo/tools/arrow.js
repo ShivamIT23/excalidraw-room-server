@@ -1,6 +1,6 @@
-window.BoardState.selectArrow = function() {
+window.BoardState.selectArrow = function () {
     window.BoardState.currentTool = 'arrow';
-    const { pen, text, eraser, hand, arrow } = window.BoardState.tools;
+    const { pen, text, eraser, arrow } = window.BoardState.tools;
     const canvas = window.BoardState.fabricCanvas;
 
     if (canvas) {
@@ -9,7 +9,7 @@ window.BoardState.selectArrow = function() {
         canvas.selection = true;
         canvas.defaultCursor = 'default';
         canvas.hoverCursor = 'move';
-        
+
         // Allow object manipulation
         canvas.forEachObject((obj) => {
             obj.selectable = true;

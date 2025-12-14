@@ -19,9 +19,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // Fixed virtual canvas dimensions - NEVER change these
-    const VIRTUAL_WIDTH = 2000;
-    const VIRTUAL_HEIGHT = 3000;
+    // Fixed virtual canvas dimensions
+    const VIRTUAL_WIDTH = 1400;
+    // For teachers: canvas height is 3x screen height, for students: use fixed 3000
+    let VIRTUAL_HEIGHT = 3000;
+
+    if (window.IS_TEACHER) {
+        // Calculate 3x screen height for teacher
+        const screenHeight = window.innerHeight;
+        VIRTUAL_HEIGHT = screenHeight * 3;
+    }
 
     // Set initial dimensions on canvas element
     canvasEl.width = VIRTUAL_WIDTH;
@@ -47,8 +54,10 @@ document.addEventListener('DOMContentLoaded', () => {
     bs.tools.pen = document.getElementById('penTool');
     bs.tools.text = document.getElementById('textTool');
     bs.tools.eraser = document.getElementById('eraserTool');
-    bs.tools.hand = document.getElementById('handTool');
     bs.tools.arrow = document.getElementById('arrowTool');
+    bs.tools.outlineShape = document.getElementById('outlineShapeTool');
+    bs.tools.filledShape = document.getElementById('filledShapeTool');
+    bs.tools.symbol = document.getElementById('symbolTool');
     bs.tools.colorPicker = document.getElementById('colorPicker');
     bs.tools.brushSize = document.getElementById('brushSize');
 
@@ -67,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sizeSelector = document.getElementById('sizeSelector');
     bs.textInput = document.getElementById('textInput');
 
-    // Viewport Scaling Logic
+    // Viewport Scaling Logic - Reimplemented for consistent behavior
     function updateViewportScale() {
         if (!bs.canvasContainer || !canvas) return;
 
@@ -80,89 +89,72 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Calculate scale to fit container
-        const scaleX = containerWidth / VIRTUAL_WIDTH;
-        const scaleY = containerHeight / VIRTUAL_HEIGHT;
-        const scale = Math.min(scaleX, scaleY);
+        // Calculate scale based on container width (consistent approach)
+        const scale = containerWidth / VIRTUAL_WIDTH;
+        const scaledWidth = VIRTUAL_WIDTH * scale;
+        const scaledHeight = VIRTUAL_HEIGHT * scale;
 
         // Get current viewport transform
         const currentTransform = canvas.viewportTransform || [1, 0, 0, 1, 0, 0];
-
-        // On initial load or if scale changed significantly, center the canvas
         const currentScale = currentTransform[0];
         const isInitialLoad = currentScale === 1 && currentTransform[4] === 0 && currentTransform[5] === 0;
 
-        if (isInitialLoad || Math.abs(currentScale - scale) > 0.01) {
-            // Center the canvas in the container
-            const scaledWidth = VIRTUAL_WIDTH * scale;
-            const scaledHeight = VIRTUAL_HEIGHT * scale;
-            const offsetX = (containerWidth - scaledWidth) / 2;
-            const offsetY = (containerHeight - scaledHeight) / 2;
+        // Calculate offsets
+        let offsetX = 0;
+        let offsetY = 0;
 
-            const newTransform = [
-                scale, 0,
-                0, scale,
-                offsetX,
-                offsetY
-            ];
+        if (window.IS_TEACHER) {
+            // Teacher: align to top-left, no centering
+            offsetX = 0;
+            offsetY = 0;
 
-            canvas.setViewportTransform(newTransform);
-            canvas.renderAll();
-
-            // Broadcast if teacher
-            if (window.IS_TEACHER) {
-                debouncedBroadcastViewport();
+            // Ensure container can scroll by setting its content size
+            if (bs.canvasContainer) {
+                bs.canvasContainer.style.position = 'relative';
+                // Create a spacer div to make container scrollable
+                let spacer = bs.canvasContainer.querySelector('.canvas-spacer');
+                if (!spacer) {
+                    spacer = document.createElement('div');
+                    spacer.className = 'canvas-spacer';
+                    spacer.style.position = 'absolute';
+                    spacer.style.top = '0';
+                    spacer.style.left = '0';
+                    spacer.style.width = '1px';
+                    spacer.style.height = '1px';
+                    spacer.style.pointerEvents = 'none';
+                    spacer.style.visibility = 'hidden';
+                    bs.canvasContainer.appendChild(spacer);
+                }
+                spacer.style.height = `${scaledHeight}px`;
+                spacer.style.width = `${scaledWidth}px`;
             }
         } else {
-            // Preserve translation (panning) but update scale
-            const newTransform = [
-                scale, 0,
-                0, scale,
-                currentTransform[4], // Preserve X translation
-                currentTransform[5]   // Preserve Y translation
-            ];
-
-            canvas.setViewportTransform(newTransform);
-            canvas.renderAll();
-        }
-    }
-
-    // Panning state for hand tool
-    bs.isPanning = false;
-    bs.lastPanPoint = null;
-
-    // Panning handler
-    function handlePan(e) {
-        if (!bs.isPanning || !window.IS_TEACHER) return;
-
-        const pointer = canvas.getPointer(e);
-        if (!bs.lastPanPoint) {
-            bs.lastPanPoint = pointer;
-            return;
+            // Student: center the canvas
+            offsetX = (containerWidth - scaledWidth) / 2;
+            if (scaledHeight <= containerHeight) {
+                offsetY = (containerHeight - scaledHeight) / 2;
+            } else {
+                offsetY = 0; // Top align if taller than container
+            }
         }
 
-        const currentTransform = canvas.viewportTransform || [1, 0, 0, 1, 0, 0];
-
-        // Calculate delta in screen coordinates
-        const deltaX = pointer.x - bs.lastPanPoint.x;
-        const deltaY = pointer.y - bs.lastPanPoint.y;
-
-        // Apply delta directly to viewport transform translation
+        // Always apply the transform to ensure consistency
         const newTransform = [
-            currentTransform[0], currentTransform[1],
-            currentTransform[2], currentTransform[3],
-            currentTransform[4] + deltaX,
-            currentTransform[5] + deltaY
+            scale, 0,
+            0, scale,
+            offsetX,
+            offsetY
         ];
 
         canvas.setViewportTransform(newTransform);
         canvas.renderAll();
 
-        bs.lastPanPoint = pointer;
-
-        // Debounced broadcast viewport change
-        debouncedBroadcastViewport();
+        // Broadcast if teacher (and not initial load to avoid spam)
+        if (window.IS_TEACHER && !isInitialLoad) {
+            debouncedBroadcastViewport();
+        }
     }
+
 
     // Broadcast viewport transform to students
     function broadcastViewportTransform() {
@@ -213,48 +205,51 @@ document.addEventListener('DOMContentLoaded', () => {
         resizeObserver.observe(bs.canvasContainer);
     }
 
-    // Panning event listeners
-    canvas.on('mouse:down', (e) => {
-        if (bs.currentTool === 'hand' && window.IS_TEACHER && !e.target) {
-            // Only start panning if not clicking on an object
-            bs.isPanning = true;
-            bs.lastPanPoint = canvas.getPointer(e.e);
-            canvas.defaultCursor = 'grabbing';
-            canvas.selection = false;
-        }
-    });
-
-    canvas.on('mouse:move', (e) => {
-        if (bs.isPanning && bs.currentTool === 'hand' && window.IS_TEACHER) {
-            e.e.preventDefault();
-            handlePan(e.e);
-        }
-    });
-
-    canvas.on('mouse:up', () => {
-        if (bs.isPanning) {
-            bs.isPanning = false;
-            bs.lastPanPoint = null;
-            if (bs.currentTool === 'hand') {
-                canvas.defaultCursor = 'grab';
-            }
-            debouncedBroadcastViewport();
-        }
-    });
-
-    // Handle mouse leave during panning
-    canvas.on('mouse:out', () => {
-        if (bs.isPanning) {
-            bs.isPanning = false;
-            bs.lastPanPoint = null;
-            if (bs.currentTool === 'hand') {
-                canvas.defaultCursor = 'grab';
-            }
-            debouncedBroadcastViewport();
-        }
-    });
 
     // --- State Management ---
+
+    // Get localStorage key for room persistence
+    function getStorageKey() {
+        return `whiteboard_${bs.roomId}`;
+    }
+
+    // Save to localStorage
+    function saveToLocalStorage() {
+        if (!bs.currentPageId) return;
+        try {
+            const storageKey = getStorageKey();
+            const json = canvas.toJSON();
+            // Explicitly save background color if not in JSON
+            if (canvas.backgroundColor) {
+                json.background = canvas.backgroundColor;
+            }
+
+            // Save all pages to localStorage
+            const allPages = {
+                ...bs.pageStrokes,
+                [bs.currentPageId]: json
+            };
+            localStorage.setItem(storageKey, JSON.stringify(allPages));
+        } catch (e) {
+            console.warn('Failed to save to localStorage:', e);
+        }
+    }
+
+    // Load from localStorage
+    function loadFromLocalStorage() {
+        try {
+            const storageKey = getStorageKey();
+            const stored = localStorage.getItem(storageKey);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                bs.pageStrokes = parsed;
+                return parsed;
+            }
+        } catch (e) {
+            console.warn('Failed to load from localStorage:', e);
+        }
+        return null;
+    }
 
     function persistCurrentPage() {
         if (!bs.currentPageId) return;
@@ -264,6 +259,9 @@ document.addEventListener('DOMContentLoaded', () => {
             json.background = canvas.backgroundColor;
         }
         bs.pageStrokes[bs.currentPageId] = json;
+
+        // Also save to localStorage
+        saveToLocalStorage();
     }
 
     function updatePageIndicator() {
@@ -290,6 +288,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 canvas.setBackgroundColor(bg, canvas.renderAll.bind(canvas));
                 if (backgroundPicker) backgroundPicker.value = (typeof bg === 'string') ? bg : '#000000';
             });
+        } else {
+            // If no cached data, try loading from localStorage
+            const storedPages = loadFromLocalStorage();
+            if (storedPages && storedPages[pageId]) {
+                const stored = storedPages[pageId];
+                canvas.loadFromJSON(stored, () => {
+                    canvas.renderAll();
+                    const bg = stored.background || stored.backgroundColor || '#000000';
+                    canvas.setBackgroundColor(bg, canvas.renderAll.bind(canvas));
+                    if (backgroundPicker) backgroundPicker.value = (typeof bg === 'string') ? bg : '#000000';
+                });
+                // Update in-memory cache
+                bs.pageStrokes[pageId] = stored;
+            }
         }
         updatePageIndicator();
     }
@@ -302,6 +314,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!bs.pageStrokes[pageId]) bs.pageStrokes[pageId] = { objects: [] }; // Safety
             bs.pageStrokes[pageId].background = backgroundColor;
         }
+
+        // Save to localStorage
+        saveToLocalStorage();
 
         if (!bs.currentPageId || bs.currentPageId === pageId) {
             setCurrentPage(pageId);
@@ -343,6 +358,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         persistCurrentPage();
+    });
+
+    // Listen for text editing completion to auto-switch to arrow
+    canvas.on('text:editing:exited', (e) => {
+        // Switch to arrow tool after text editing is complete
+        if (bs.currentTool === 'text' && bs.selectArrow) {
+            setTimeout(() => {
+                bs.selectArrow();
+            }, 100);
+        }
     });
 
     canvas.on('object:modified', (e) => {
@@ -453,7 +478,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const size = parseInt(option.getAttribute('data-size'), 10);
                 if (size && bs.tools.brushSize) {
                     bs.tools.brushSize.value = size;
-                    canvas.freeDrawingBrush.width = size;
+                    // canvas.freeDrawingBrush.width = size;
+                    // Update brush width if drawing mode is active
+                    if (canvas.freeDrawingBrush) {
+                        canvas.freeDrawingBrush.width = size;
+                    }
+                    // Update visual feedback
                     sizeOptions.forEach(opt => opt.classList.remove('opacity-100'));
                     sizeOptions.forEach(opt => opt.classList.add('opacity-70'));
                     option.classList.remove('opacity-70');
@@ -505,7 +535,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (msg.payload?.currentPageId) {
                     // If we switched page, setCurrentPage handles valid persisted data
                     // But if it's a join, we might wait for snapshot
-                    setCurrentPage(msg.payload.currentPageId);
+                    const pageId = msg.payload.currentPageId;
+                    setCurrentPage(pageId);
+
+                    // If no snapshot received yet, try loading from localStorage as fallback
+                    setTimeout(() => {
+                        if (!bs.pageStrokes[pageId] || (bs.pageStrokes[pageId].objects && bs.pageStrokes[pageId].objects.length === 0)) {
+                            const storedPages = loadFromLocalStorage();
+                            if (storedPages && storedPages[pageId] && storedPages[pageId].objects && storedPages[pageId].objects.length > 0) {
+                                setCurrentPage(pageId);
+                            }
+                        }
+                    }, 500); // Wait a bit for snapshot to arrive
                 }
                 updatePageIndicator();
                 return;
@@ -576,9 +617,33 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (msg.type === 'clear') {
                 canvas.clear();
                 canvas.setBackgroundColor('#000000', canvas.renderAll.bind(canvas));
+                // Clear localStorage for this page
+                try {
+                    const storageKey = getStorageKey();
+                    const stored = localStorage.getItem(storageKey);
+                    if (stored) {
+                        const parsed = JSON.parse(stored);
+                        if (parsed[bs.currentPageId]) {
+                            parsed[bs.currentPageId] = { objects: [], background: '#000000' };
+                            localStorage.setItem(storageKey, JSON.stringify(parsed));
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Failed to clear localStorage:', e);
+                }
                 persistCurrentPage();
+            } else if (msg.type === 'viewport_change') {
+                // Students receive and apply teacher's scroll position
+                if (!window.IS_TEACHER && msg.payload) {
+                    bs.isRemoteScrolling = true;
+                    if (bs.canvasContainer) {
+                        if (msg.payload.scrollTop !== undefined) bs.canvasContainer.scrollTop = msg.payload.scrollTop;
+                        if (msg.payload.scrollLeft !== undefined) bs.canvasContainer.scrollLeft = msg.payload.scrollLeft;
+                    }
+                    setTimeout(() => { bs.isRemoteScrolling = false; }, 100);
+                }
             } else if (msg.type === 'viewport_transform') {
-                // Students receive and apply teacher's viewport transform
+                // Students receive and apply teacher's viewport transform (zoom/pan)
                 if (!window.IS_TEACHER && msg.payload.viewportTransform) {
                     const transform = msg.payload.viewportTransform;
                     canvas.setViewportTransform(transform);
@@ -616,8 +681,21 @@ document.addEventListener('DOMContentLoaded', () => {
     bs.tools.pen && bs.tools.pen.addEventListener('click', () => bs.selectPen());
     bs.tools.text && bs.tools.text.addEventListener('click', () => bs.selectText());
     bs.tools.eraser && bs.tools.eraser.addEventListener('click', () => bs.selectEraser());
-    bs.tools.hand && bs.tools.hand.addEventListener('click', () => bs.selectHand());
     bs.tools.arrow && bs.tools.arrow.addEventListener('click', () => bs.selectArrow());
+
+    // Try loading from localStorage on initial load (before WebSocket snapshot)
+    setTimeout(() => {
+        if (bs.currentPageId) {
+            const storedPages = loadFromLocalStorage();
+            if (storedPages && storedPages[bs.currentPageId]) {
+                // Only load if we don't have data yet
+                if (!bs.pageStrokes[bs.currentPageId] ||
+                    (bs.pageStrokes[bs.currentPageId].objects && bs.pageStrokes[bs.currentPageId].objects.length === 0)) {
+                    setCurrentPage(bs.currentPageId);
+                }
+            }
+        }
+    }, 200);
 
     // Select Arrow by default (handles UI reset)
     if (bs.selectArrow) {

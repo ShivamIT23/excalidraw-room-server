@@ -20,12 +20,25 @@ window.BoardState.selectText = function () {
                 if (options.target) return; // clicked on existing object
 
                 const pointer = canvas.getPointer(options.e);
+                // Get text size from brushSize (maps to 12-44px range)
+                const brushSizeInput = document.getElementById('brushSize');
+                const brushSize = parseInt(brushSizeInput?.value || 5, 10);
+                // Map brush size (5, 11, 17, 23, 36) to text size (12, 20, 28, 36, 44)
+                const textSizeMap = {
+                    5: 12,
+                    11: 20,
+                    17: 28,
+                    23: 36,
+                    36: 44
+                };
+                const fontSize = textSizeMap[brushSize] || 20;
+
                 const iText = new fabric.IText('Type here', {
                     left: pointer.x,
                     top: pointer.y,
                     fontFamily: 'Arial',
                     fill: document.getElementById('colorPicker')?.value || '#ffffff',
-                    fontSize: 20
+                    fontSize: fontSize
                 });
 
                 canvas.add(iText);
@@ -33,8 +46,14 @@ window.BoardState.selectText = function () {
                 iText.enterEditing();
                 iText.selectAll();
 
-                // Switch back to pen automatically? Or stay in text mode? Use stay in mode.
-                // window.BoardState.selectPen(); 
+                // Listen for when text editing is complete to switch to arrow
+                iText.on('editing:exited', function () {
+                    if (window.BoardState.currentTool === 'text' && window.BoardState.selectArrow) {
+                        setTimeout(() => {
+                            window.BoardState.selectArrow();
+                        }, 100);
+                    }
+                });
             });
         }
     }

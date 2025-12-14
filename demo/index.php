@@ -67,10 +67,11 @@ if (isset($_GET['id']) && !empty($_GET['id'])) {
     <!-- Main Container -->
     <div class="h-screen w-screen flex flex-col max-w-svw max-h-svh">
         <!-- Main Content Grid -->
-        <div class="flex-1 grid grid-cols-1 grid-rows-[65%_35%] lg:grid-cols-[75%_25%] lg:grid-rows-1 h-full">
+        <div class="flex-1 grid grid-cols-1 grid-rows-[65%_35%] xl:grid-cols-[1fr_360px]
+         xl:grid-rows-1 h-full">
             <!-- Left Panel -->
             <div id="leftPanel"
-                class="bg-white border-r border-gray-200 flex flex-col relative overflow-hidden min-h-0">
+                class="bg-white border-r max-w-[1400px] border-gray-200 flex flex-col relative overflow-hidden min-h-0">
                 <!-- Initially holds Whiteboard -->
                 <div id="whiteboardContainer" class="w-full h-full flex flex-col bg-gray-50 relative">
                     <?php include 'board.php'; ?>

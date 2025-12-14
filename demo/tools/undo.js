@@ -1,0 +1,2 @@
+// Undo tool - empty implementation
+

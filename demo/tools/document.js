@@ -1,0 +1,2 @@
+// Document tool - empty implementation
+
